@@ -1420,7 +1420,7 @@ class _MafiaSectionState extends State<_MafiaSection> {
               ),
               const SizedBox(width: AppSpacing.sm),
               IconButton(
-                icon: Icon(PhosphorIconsLight.envelopeSimple, color: AppColors.brass),
+                icon: Icon(PhosphorIconsLight.paperPlaneTilt, color: AppColors.brass),
                 onPressed: () {
                   final text = _messageController.text.trim();
                   if (text.isEmpty) return;
