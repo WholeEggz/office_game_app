@@ -200,4 +200,11 @@ class FirebaseGameRepository implements GameRepository {
     required String playerId,
   }) =>
       throw UnimplementedError();
+
+  @override
+  Future<void> recordReentry({
+    required String gameId,
+    required String playerId,
+  }) =>
+      throw UnimplementedError();
 }

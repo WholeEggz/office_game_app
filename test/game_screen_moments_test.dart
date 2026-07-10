@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:office_game_app/data/local/local_auth_service.dart';
 import 'package:office_game_app/data/local/local_game_repository.dart';
+import 'package:office_game_app/domain/repositories/auth_service.dart';
 import 'package:office_game_app/domain/repositories/game_repository.dart';
+import 'package:office_game_app/ui/entry/player_entry_screen.dart';
 import 'package:office_game_app/ui/game/game_screen.dart';
 import 'package:provider/provider.dart';
 
@@ -59,6 +62,12 @@ void main() {
     await tester.pump();
     await tester.pump(); // one more frame for the post-role-reveal moments fetch
 
+    // "Welcome to the case" (joinedCase, recorded when they were first
+    // added) is first in the queue, ahead of the round-scoped moment.
+    expect(find.textContaining('Welcome to the case'), findsOneWidget);
+    await tester.tap(find.text('Continue'));
+    await tester.pump();
+
     expect(find.textContaining('Round 1 has ended'), findsOneWidget);
     await tester.tap(find.text('Continue'));
     await tester.pump();
@@ -113,9 +122,14 @@ void main() {
     await tester.tap(find.text('Open the case file'));
     await tester.pump();
     await tester.pump();
-    // Nothing has happened yet — no dialog on first entry.
+
+    // Only the joinedCase welcome dialog so far — nothing round-related
+    // has happened yet.
+    expect(find.textContaining('Welcome to the case'), findsOneWidget);
     expect(find.textContaining('has ended'), findsNothing);
     expect(find.textContaining('Good catch'), findsNothing);
+    await tester.tap(find.text('Continue'));
+    await tester.pump();
 
     // Everyone votes for `target`, cast directly through the repository —
     // this player's GameScreen is already open and just watching, not the
@@ -139,6 +153,81 @@ void main() {
     final current = await repo.watchGame(game.id).first;
     for (final p in current.players.where((p) => p.id != otherMafia.id)) {
       await repo.castVote(gameId: game.id, voterId: p.id, targetPlayerId: otherMafia.id);
+    }
+    await repo.resolveVotesForDay(game.id);
+    await tester.pump();
+    await tester.pump();
+    await _drainDialogs(tester);
+  });
+
+  testWidgets(
+      'joining a case via "Find your case" shows a welcome dialog the first time, and '
+      '"Enter" on a later visit shows a welcome-back dialog instead', (tester) async {
+    final repo = LocalGameRepository();
+    final auth = LocalAuthService();
+    // minPlayers 4 so the case is still just `recruiting` after Alice
+    // joins as the 2nd player below — a 2-player, 1-mafia game would hit
+    // instant parity and end itself the moment she joined, queuing a
+    // finale dialog that would tangle up this test's own assertions.
+    final game = await repo.createGame(
+      locationTag: 'Test Office',
+      minPlayers: 4,
+      creatorId: 'creator',
+      creatorName: 'Creator',
+      mafiaCount: 1,
+    );
+
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        Provider<GameRepository>.value(value: repo),
+        Provider<AuthService>.value(value: auth),
+      ],
+      child: const MaterialApp(home: PlayerEntryScreen()),
+    ));
+
+    await tester.enterText(find.byType(TextField), 'Alice');
+    await tester.tap(find.text('Continue'));
+    await tester.pump();
+    await tester.pump();
+
+    // Join the existing case from the list.
+    await tester.tap(find.text('Join'));
+    await tester.pump();
+    await tester.pump();
+
+    // Dismiss the role-reveal ceremony, then the welcome dialog it queues.
+    await tester.tap(find.text('Open the case file'));
+    await tester.pump();
+    await tester.pump();
+    expect(find.textContaining('Welcome to the case'), findsOneWidget);
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+
+    // Back out to "Find your case" and enter the same case again — this
+    // time it's "Enter", not "Join".
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.text('Enter'), findsOneWidget);
+    await tester.tap(find.text('Enter'));
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.text('Open the case file'));
+    await tester.pump();
+    await tester.pump();
+    expect(find.textContaining('Welcome back'), findsOneWidget);
+    expect(find.textContaining('Welcome to the case'), findsNothing);
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+
+    // Fill the roster and close the case so no cutoff timer is left
+    // pending at teardown.
+    await repo.addPlayer(gameId: game.id, playerId: 'p3', name: 'Player 3');
+    await repo.addPlayer(gameId: game.id, playerId: 'p4', name: 'Player 4');
+    final started = await repo.watchGame(game.id).first;
+    final mafia = started.mafia.single;
+    for (final voter in started.players.where((p) => p.id != mafia.id)) {
+      await repo.castVote(gameId: game.id, voterId: voter.id, targetPlayerId: mafia.id);
     }
     await repo.resolveVotesForDay(game.id);
     await tester.pump();

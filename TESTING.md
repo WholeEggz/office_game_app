@@ -318,34 +318,47 @@ daily cutoff time arrives, no button required.
 
 ## 14. Moment dialogs (congratulations, drama, and round-end catch-up)
 
-Six kinds of "something happened to you" moment now surface as a dialog:
-correctly voting to unmask an Informant (+1 weight reward), successfully
-executing a recruitment, being recruited and switching sides, the case
-ending with your side winning or losing, and — the fallback — a round
-ending with nothing more specific to report. Celebratory moments (reward,
-recruitment success, win) get a brass-bordered dialog, light haptic, and a
-system click; drama moments (switching sides, losing) get a
-crimson-bordered dialog and a heavier haptic; the round-ended fallback is
-neutral-bordered and deliberately silent (no haptic/sound).
+Eleven kinds of "something happened to you" moment surface as a dialog,
+each with one of four looks:
+
+- **Celebratory** (brass border, light haptic, system click): correct
+  vote reward, successful recruitment execution, finale win, joining a
+  case for the first time.
+- **Drama** (crimson border, heavy haptic, click): being targeted by the
+  mafia's elimination signal, being voted out by fellow villagers by
+  mistake, being recruited and switching sides, finale loss.
+- **Informational** (a muted border, click but *no* haptic — this fires
+  often enough that a buzz every time would wear thin): an Informant
+  unmasked by someone else's vote (not yours), re-entering a case you'd
+  already joined.
+- **Neutral fallback** (muted border, silent — no haptic, no sound): a
+  round ended with nothing more specific to report.
 
 These check for themselves the moment the dashboard is showing (right
 after the role-reveal ceremony, live for the rest of the session) — no
 separate screen or setting to open. If several moments piled up while you
-weren't looking, every celebratory/drama one shows in full, one dialog at
-a time ("Continue" to advance); any number of quiet, nothing-happened
-rounds among them collapse down to a single "Round N has ended" for the
-most recent one.
+weren't looking, every celebratory/drama/informational one shows in full,
+one dialog at a time ("Continue" to advance); any number of quiet,
+nothing-happened rounds among them collapse down to a single "Round N has
+ended" for the most recent one. Being unmasked yourself still only gets
+the existing "UNMASKED" stamp ceremony (§5.6) — that's not one of the
+eleven moment types, since the stamp already covers it.
 
 | # | Steps | Expected |
 |---|---|---|
-| 14.1 | With a game already running, leave a player's `GameScreen` closed, resolve a round with nobody voting (debug button or wait for cutoff), then re-enter as that player | Once the role-reveal ceremony is dismissed, a dialog reads "Round N has ended — nothing notable to report for you this round," neutral-bordered, no haptic |
-| 14.2 | As a villager who's already inside a game (no need to leave and re-enter), have everyone correctly vote out an Informant this round, then resolve | A brass-bordered "Good catch" dialog appears live, without leaving the screen — "+1 vote weight," light haptic + click |
-| 14.3 | Re-enter as the just-unmasked Informant from 14.2 | They get the "UNMASKED" stamp ceremony as before (§5.6) — *not* an additional moment dialog; the target of an unmask isn't one of the six moment types, since the stamp already covers it |
-| 14.4 | As a mafia member, successfully execute a recruitment (propose → agree → approach → real target accepts) while your own `GameScreen` stays open the whole time | A brass "Recruitment successful" dialog appears live for you (the executor), and a crimson "You've switched sides" dialog appears for the new recruit the next time *they* check in |
-| 14.5 | Leave several rounds unresolved-for-you at once (e.g. resolve 3 rounds via the debug button from a different player's view, none of them notable for a given player), then enter as that player | Only *one* "Round N has ended" dialog appears (the most recent), not three in a row |
-| 14.6 | Play a case to its finale (§12) while remaining inside the winning side's `GameScreen` | The full-screen finale ceremony appears live, as before — no extra moment dialog stacks on top of it in the same session |
-| 14.7 | Re-enter any player's `GameScreen` after a finale that happened while they weren't looking | A "Case closed — your side won" (brass) or "— your side lost" (crimson) dialog appears once, in addition to the finale screen underneath it |
-| 14.8 | Dismiss a moment dialog with "Continue", then immediately re-enter the same player | Nothing reappears — moments are marked acknowledged the moment they're fetched, not just when each individual dialog is dismissed |
+| 14.1 | With a game already running, leave a player's `GameScreen` closed, resolve a round with nobody voting (debug button or wait for cutoff), then re-enter as that player | Once the role-reveal ceremony is dismissed, a dialog reads "Round N has ended — nothing notable to report for you this round," muted border, no haptic/sound |
+| 14.2 | As a villager who's already inside a game (no need to leave and re-enter), have everyone correctly vote out an Informant this round, then resolve | A brass-bordered "Good catch" dialog appears live for every voter who backed the winning vote — "+1 vote weight," light haptic + click |
+| 14.3 | Check any *other* villager (didn't vote, or voted for someone else) after the same round from 14.2 resolves | A muted "An Informant was unmasked" dialog — informational tone (click, no haptic), acknowledging the round's biggest event without personal credit |
+| 14.4 | Re-enter as the just-unmasked Informant from 14.2 | They get the "UNMASKED" stamp ceremony as before (§5.6) — not a moment dialog on top of it |
+| 14.5 | As a mafia member, execute an agreed elimination signal against a villager (§3) | The moment it lands, that villager gets a crimson "You were marked" dialog the next time they check in — "you lost 1 vote weight" |
+| 14.6 | Have villagers mistakenly cast the round's winning vote against a fellow villager instead of an Informant, then resolve | That villager (and only them) gets a crimson "Voted against" dialog — "your fellow villagers' votes landed on you" |
+| 14.7 | As a mafia member, successfully execute a recruitment (propose → agree → approach → real target accepts) while your own `GameScreen` stays open the whole time | A brass "Recruitment successful" dialog appears live for you (the executor), and a crimson "You've switched sides" dialog appears for the new recruit the next time *they* check in |
+| 14.8 | Leave several rounds unresolved-for-you at once (e.g. resolve 3 rounds via the debug button from a different player's view, none of them notable for a given player), then enter as that player | Only *one* "Round N has ended" dialog appears (the most recent), not three in a row |
+| 14.9 | Play a case to its finale (§12) while remaining inside the winning side's `GameScreen` | The full-screen finale ceremony appears live, as before — no extra moment dialog stacks on top of it in the same session |
+| 14.10 | Re-enter any player's `GameScreen` after a finale that happened while they weren't looking | A "Case closed — your side won" (brass) or "— your side lost" (crimson) dialog appears once, in addition to the finale screen underneath it |
+| 14.11 | Join a brand new case for the first time (§0.8, "Join" from "Find your case") | Right after the role-reveal ceremony, a brass "Welcome to the case" dialog appears |
+| 14.12 | Leave that case's `GameScreen` (back button — don't tap the sign-out icon, that's leaving the case itself) and go back in via "Enter" (§0.9) | Instead of another "Welcome to the case," a muted "Welcome back" dialog appears (informational tone — click, no haptic) |
+| 14.13 | Dismiss a moment dialog with "Continue", then immediately re-enter the same player | Nothing reappears — moments are marked acknowledged the moment they're fetched, not just when each individual dialog is dismissed |
 
 ---
 

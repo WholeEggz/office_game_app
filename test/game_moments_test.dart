@@ -2,10 +2,59 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:office_game_app/data/local/local_game_repository.dart';
 import 'package:office_game_app/domain/models/game_moment.dart';
 
+/// Every player gets a joinedCase moment the instant they're added
+/// (creator or otherwise) — acknowledging it upfront in most tests below
+/// keeps their fetch assertions focused on whatever happens *after* setup,
+/// the same way a real player would already have seen "you joined" before
+/// anything else in the case happens to them.
+Future<void> _ackAll(LocalGameRepository repo, String gameId, Iterable<String> playerIds) async {
+  for (final id in playerIds) {
+    await repo.acknowledgeAllMoments(gameId: gameId, playerId: id);
+  }
+}
+
 void main() {
+  test('joining or creating a case records a joinedCase moment, round 1', () async {
+    final repo = LocalGameRepository();
+    final game = await repo.createGame(
+      locationTag: 'Test Office',
+      minPlayers: 4,
+      creatorId: 'p1',
+      creatorName: 'Alice',
+    );
+    final creatorMoments = await repo.fetchUnacknowledgedMoments(gameId: game.id, playerId: 'p1');
+    expect(creatorMoments, hasLength(1));
+    expect(creatorMoments.single.type, GameMomentType.joinedCase);
+    expect(creatorMoments.single.round, 1);
+
+    await repo.addPlayer(gameId: game.id, playerId: 'p2', name: 'Bob');
+    final joinerMoments = await repo.fetchUnacknowledgedMoments(gameId: game.id, playerId: 'p2');
+    expect(joinerMoments, hasLength(1));
+    expect(joinerMoments.single.type, GameMomentType.joinedCase);
+  });
+
+  test('re-entering a case records reenteredCase, and only when explicitly called', () async {
+    final repo = LocalGameRepository();
+    final game = await repo.createGame(
+      locationTag: 'Test Office',
+      minPlayers: 4,
+      creatorId: 'p1',
+      creatorName: 'Alice',
+    );
+    await _ackAll(repo, game.id, ['p1']);
+
+    expect(await repo.fetchUnacknowledgedMoments(gameId: game.id, playerId: 'p1'), isEmpty);
+
+    await repo.recordReentry(gameId: game.id, playerId: 'p1');
+    final moments = await repo.fetchUnacknowledgedMoments(gameId: game.id, playerId: 'p1');
+    expect(moments, hasLength(1));
+    expect(moments.single.type, GameMomentType.reenteredCase);
+  });
+
   test(
-      'correctly unmasking a mafia member rewards every voter who backed them, '
-      'and only them — the target and non-voters get the roundEnded fallback instead',
+      'correctly unmasking a mafia member rewards every voter who backed them, informs '
+      'everyone else that an Informant was caught, and gives neither group the '
+      'roundEnded fallback — the target gets neither (the stamp ceremony covers them)',
       () async {
     final repo = LocalGameRepository();
     // 2 mafia so unmasking one doesn't also end the game (1 mafia left
@@ -21,36 +70,39 @@ void main() {
     for (var i = 2; i <= 8; i++) {
       await repo.addPlayer(gameId: game.id, playerId: 'p$i', name: 'Player $i');
     }
-    await repo.startGame(game.id);
     final started = await repo.watchGame(game.id).first;
-    final target = started.mafia.first;
-    final otherMafia = started.mafia.firstWhere((p) => p.id != target.id);
-    final voters = started.players.where((p) => p.id != target.id).toList();
+    await _ackAll(repo, game.id, started.players.map((p) => p.id));
 
-    for (final voter in voters) {
+    final target = started.mafia.first;
+    final rewardedVoters = started.players.where((p) => p.id != target.id).take(3).toList();
+    final bystanders = started.players
+        .where((p) => p.id != target.id && !rewardedVoters.any((r) => r.id == p.id))
+        .toList();
+    expect(bystanders, isNotEmpty);
+
+    for (final voter in rewardedVoters) {
       await repo.castVote(gameId: game.id, voterId: voter.id, targetPlayerId: target.id);
     }
     await repo.resolveVotesForDay(game.id);
 
-    for (final voter in voters) {
+    for (final voter in rewardedVoters) {
       final moments =
           await repo.fetchUnacknowledgedMoments(gameId: game.id, playerId: voter.id);
       expect(moments, hasLength(1));
       expect(moments.single.type, GameMomentType.correctVoteReward);
-      expect(moments.single.round, 1);
     }
-
-    // The unmasked target isn't a "voter who backed them" — they get the
-    // generic fallback, not a reward for their own unmasking.
+    for (final p in bystanders) {
+      final moments = await repo.fetchUnacknowledgedMoments(gameId: game.id, playerId: p.id);
+      expect(moments, hasLength(1));
+      expect(moments.single.type, GameMomentType.mafiaUnmaskedByOthers);
+    }
+    // The unmasked target isn't a "voter who backed them", and the stamp
+    // ceremony (not a moment) covers their own discovery — they fall
+    // through to the plain fallback.
     final targetMoments =
         await repo.fetchUnacknowledgedMoments(gameId: game.id, playerId: target.id);
     expect(targetMoments, hasLength(1));
     expect(targetMoments.single.type, GameMomentType.roundEnded);
-
-    // otherMafia is already included in `voters` above (voted too), so no
-    // separate assertion needed — but double-check nobody outside the
-    // roster is missing coverage.
-    expect(otherMafia.id, isNot(target.id));
   });
 
   test('a round with nothing specific to report gives everyone the roundEnded fallback',
@@ -65,7 +117,8 @@ void main() {
     for (var i = 2; i <= 4; i++) {
       await repo.addPlayer(gameId: game.id, playerId: 'p$i', name: 'Player $i');
     }
-    await repo.startGame(game.id);
+    await _ackAll(repo, game.id, ['p1', 'p2', 'p3', 'p4']);
+
     // No votes cast at all this round.
     await repo.resolveVotesForDay(game.id);
 
@@ -75,6 +128,86 @@ void main() {
       expect(moments.single.type, GameMomentType.roundEnded);
       expect(moments.single.round, 1);
     }
+  });
+
+  test(
+      'villagers mistakenly voting out one of their own targets that villager, '
+      'and only them — everyone else gets the roundEnded fallback', () async {
+    final repo = LocalGameRepository();
+    final game = await repo.createGame(
+      locationTag: 'Test Office',
+      minPlayers: 4,
+      creatorId: 'p1',
+      creatorName: 'Alice',
+    );
+    for (var i = 2; i <= 4; i++) {
+      await repo.addPlayer(gameId: game.id, playerId: 'p$i', name: 'Player $i');
+    }
+    final started = await repo.watchGame(game.id).first;
+    await _ackAll(repo, game.id, started.players.map((p) => p.id));
+    final target = started.villagers.first;
+
+    for (final voter in started.players.where((p) => p.id != target.id)) {
+      await repo.castVote(gameId: game.id, voterId: voter.id, targetPlayerId: target.id);
+    }
+    await repo.resolveVotesForDay(game.id);
+
+    final targetMoments =
+        await repo.fetchUnacknowledgedMoments(gameId: game.id, playerId: target.id);
+    expect(targetMoments, hasLength(1));
+    expect(targetMoments.single.type, GameMomentType.targetedByVillagers);
+
+    for (final voter in started.players.where((p) => p.id != target.id)) {
+      final moments =
+          await repo.fetchUnacknowledgedMoments(gameId: game.id, playerId: voter.id);
+      expect(moments, hasLength(1));
+      expect(moments.single.type, GameMomentType.roundEnded);
+    }
+  });
+
+  test(
+      "the mafia's elimination signal landing on a villager targets them specifically, "
+      "and doesn't also give them the roundEnded fallback once the round resolves later",
+      () async {
+    final repo = LocalGameRepository();
+    final game = await repo.createGame(
+      locationTag: 'Test Office',
+      minPlayers: 4,
+      creatorId: 'p1',
+      creatorName: 'Alice',
+      mafiaCount: 1,
+    );
+    for (var i = 2; i <= 4; i++) {
+      await repo.addPlayer(gameId: game.id, playerId: 'p$i', name: 'Player $i');
+    }
+    final started = await repo.watchGame(game.id).first;
+    await _ackAll(repo, game.id, started.players.map((p) => p.id));
+    final mafia = started.mafia.single;
+    final target = started.villagers.first;
+
+    await repo.proposeElimination(
+      gameId: game.id,
+      authorId: mafia.id,
+      method: 'a note left on their monitor',
+      targetPlayerId: target.id,
+    );
+    final proposalId =
+        (await repo.watchMafiaThread(gameId: game.id, viewerId: mafia.id).first).single.id;
+    await repo.executeElimination(gameId: game.id, proposalId: proposalId, playerId: mafia.id);
+
+    final targetMomentsRightAfter =
+        await repo.fetchUnacknowledgedMoments(gameId: game.id, playerId: target.id);
+    expect(targetMomentsRightAfter, hasLength(1));
+    expect(targetMomentsRightAfter.single.type, GameMomentType.targetedByMafia);
+
+    // Acknowledge that one, then let the round resolve with nobody
+    // voting — the earlier targeting shouldn't also produce a roundEnded
+    // for the same round once it's actually acknowledged and re-fetched.
+    await repo.acknowledgeAllMoments(gameId: game.id, playerId: target.id);
+    await repo.resolveVotesForDay(game.id);
+    final targetMomentsAfterResolve =
+        await repo.fetchUnacknowledgedMoments(gameId: game.id, playerId: target.id);
+    expect(targetMomentsAfterResolve, isEmpty);
   });
 
   test(
@@ -96,8 +229,8 @@ void main() {
     for (var i = 2; i <= 6; i++) {
       await repo.addPlayer(gameId: game.id, playerId: 'p$i', name: 'Player $i');
     }
-    await repo.startGame(game.id);
     final started = await repo.watchGame(game.id).first;
+    await _ackAll(repo, game.id, started.players.map((p) => p.id));
     final recruiter = started.mafia.single;
     final target = started.villagers.first;
     final bystanders =
@@ -147,7 +280,6 @@ void main() {
     for (var i = 2; i <= 4; i++) {
       await repo.addPlayer(gameId: game.id, playerId: 'p$i', name: 'Player $i');
     }
-    await repo.startGame(game.id);
     final started = await repo.watchGame(game.id).first;
     final mafia = started.mafia.single;
     final villagers = started.villagers;
@@ -185,7 +317,6 @@ void main() {
     for (var i = 2; i <= 4; i++) {
       await repo.addPlayer(gameId: game.id, playerId: 'p$i', name: 'Player $i');
     }
-    await repo.startGame(game.id);
     final started = await repo.watchGame(game.id).first;
     final recruiter = started.mafia.single;
     final target = started.villagers.first;
@@ -230,7 +361,8 @@ void main() {
     for (var i = 2; i <= 4; i++) {
       await repo.addPlayer(gameId: game.id, playerId: 'p$i', name: 'Player $i');
     }
-    await repo.startGame(game.id);
+    await _ackAll(repo, game.id, ['p1', 'p2', 'p3', 'p4']);
+
     await repo.resolveVotesForDay(game.id);
 
     final firstFetch = await repo.fetchUnacknowledgedMoments(gameId: game.id, playerId: 'p1');

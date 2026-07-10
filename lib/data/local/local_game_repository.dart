@@ -58,6 +58,15 @@ class _GameRecord {
   final List<GameMoment> moments = [];
   final Set<String> acknowledgedMomentIds = {};
 
+  /// Player ids who've already gotten a round-scoped moment (a vote
+  /// reward, a mafia hit, an unmask, a recruitment, ...) *this* round —
+  /// cleared every time a round resolves. [LocalGameRepository._recordMoment]
+  /// maintains this so the generic [GameMomentType.roundEnded] fallback
+  /// only ever goes to players nothing more specific happened to, without
+  /// every call site having to track and pass that exclusion set around
+  /// by hand.
+  final Set<String> notifiedThisRound = {};
+
   /// Pending lapse timers, keyed by proposal id — cancelled the moment a
   /// proposal is executed or the round ends first.
   final lapseTimers = <String, Timer>{};
@@ -154,6 +163,7 @@ class LocalGameRepository implements GameRepository {
           p.id,
           onWinningSide ? GameMomentType.finaleWin : GameMomentType.finaleLoss,
           record.game.currentRound,
+          countsAsRoundActivity: false,
         );
       }
     }
@@ -172,7 +182,21 @@ class LocalGameRepository implements GameRepository {
     _replaceGame(record, record.game.copyWith(players: players));
   }
 
-  void _recordMoment(_GameRecord record, String playerId, GameMomentType type, int round) {
+  /// [countsAsRoundActivity] marks [playerId] in [_GameRecord.notifiedThisRound]
+  /// so the generic [GameMomentType.roundEnded] fallback skips them for
+  /// the rest of this round — true for anything that happened *within* a
+  /// round (a vote reward, a hit, a recruitment...), false for moments
+  /// that aren't about "what happened this round" at all ([GameMomentType.finaleWin]/
+  /// [GameMomentType.finaleLoss], [GameMomentType.joinedCase],
+  /// [GameMomentType.reenteredCase]) — those shouldn't suppress an
+  /// otherwise-accurate "nothing else happened" for the same round.
+  void _recordMoment(
+    _GameRecord record,
+    String playerId,
+    GameMomentType type,
+    int round, {
+    bool countsAsRoundActivity = true,
+  }) {
     record.moments.add(GameMoment(
       id: _uuid.v4(),
       gameId: record.game.id,
@@ -181,6 +205,9 @@ class LocalGameRepository implements GameRepository {
       round: round,
       createdAt: DateTime.now(),
     ));
+    if (countsAsRoundActivity) {
+      record.notifiedThisRound.add(playerId);
+    }
   }
 
   @override
@@ -213,6 +240,8 @@ class LocalGameRepository implements GameRepository {
     );
     final record = _GameRecord(game);
     _games[game.id] = record;
+    _recordMoment(record, creatorId, GameMomentType.joinedCase, game.currentRound,
+        countsAsRoundActivity: false);
     // Covers the edge case where minPlayers is already met the moment the
     // creator joins (e.g. minPlayers: 1) — the same rule as [addPlayer]:
     // roles get drawn the instant the roster reaches minPlayers, no
@@ -250,6 +279,8 @@ class LocalGameRepository implements GameRepository {
       joinedAt: DateTime.now(),
     );
     _replaceGame(record, record.game.copyWith(players: [...record.game.players, player]));
+    _recordMoment(record, playerId, GameMomentType.joinedCase, record.game.currentRound,
+        countsAsRoundActivity: false);
     // Real players never see a manual "start the game" button (only the
     // debug role switcher has one) — without this, a game joined entirely
     // through the real player flow would sit in `recruiting` forever, every
@@ -589,6 +620,12 @@ class LocalGameRepository implements GameRepository {
     final target = record.game.playerById(entry.proposedTargetId!);
     if (target != null) {
       _replacePlayer(record, target.id, (p) => p.copyWith(voteWeight: max(0, p.voteWeight - 1)));
+      _recordMoment(
+        record,
+        target.id,
+        GameMomentType.targetedByMafia,
+        record.game.currentRound,
+      );
     }
     _replaceGame(record, record.game.copyWith(eliminationSignalExecuted: true));
     record.threadChanges.add(null);
@@ -766,12 +803,12 @@ class LocalGameRepository implements GameRepository {
   /// Tallies the current round's votes and advances to the next one —
   /// shared by the manual debug "resolve" button and by the real target
   /// acknowledging an executed elimination signal, since that's meant to
-  /// end the day the same way. [alreadyNotified] is who this round's more
-  /// specific caller (currently only [respondToRecruitment]) already
-  /// recorded a [GameMoment] for — they're skipped for the generic
-  /// [GameMomentType.roundEnded] fallback below, so nobody gets both "you
-  /// were recruited" and "the round ended" for the same round.
-  void _resolveRound(_GameRecord record, {Set<String> alreadyNotified = const {}}) {
+  /// end the day the same way. Anyone [_recordMoment] already marked in
+  /// [_GameRecord.notifiedThisRound] (a vote reward, a mafia hit, a
+  /// recruitment...) is skipped for the generic [GameMomentType.roundEnded]
+  /// fallback below, so nobody gets both a specific moment and "the round
+  /// ended" for the same round.
+  void _resolveRound(_GameRecord record) {
     final game = record.game;
     final currentRound = game.currentRound;
     final roundVotes = record.votes.where((v) => v.round == currentRound).toList();
@@ -795,7 +832,6 @@ class LocalGameRepository implements GameRepository {
     });
 
     var players = game.players;
-    final notified = {...alreadyNotified};
     if (winnerId != null && bestWeight > 0) {
       final target = game.playerById(winnerId!)!;
       if (target.role == PlayerRole.mafia && !target.wasUnmasked) {
@@ -817,7 +853,13 @@ class LocalGameRepository implements GameRepository {
         for (final voterId in rewardedVoterIds) {
           _recordMoment(record, voterId, GameMomentType.correctVoteReward, currentRound);
         }
-        notified.addAll(rewardedVoterIds);
+        // Everyone else still finds out an Informant was caught this
+        // round, just without personal credit — the target themselves is
+        // covered by the "UNMASKED" stamp ceremony instead, not a moment.
+        for (final p in game.players) {
+          if (p.id == winnerId || rewardedVoterIds.contains(p.id)) continue;
+          _recordMoment(record, p.id, GameMomentType.mafiaUnmaskedByOthers, currentRound);
+        }
       } else {
         // Voted for a villager instead: the vote still lands, it just
         // erodes their weight the same way a mafia elimination would —
@@ -828,6 +870,7 @@ class LocalGameRepository implements GameRepository {
           }
           return p;
         }).toList();
+        _recordMoment(record, winnerId!, GameMomentType.targetedByVillagers, currentRound);
       }
     }
 
@@ -835,10 +878,11 @@ class LocalGameRepository implements GameRepository {
     // get something more specific this round, so a round never passes
     // with zero acknowledgement for anyone.
     for (final p in game.players) {
-      if (!notified.contains(p.id)) {
+      if (!record.notifiedThisRound.contains(p.id)) {
         _recordMoment(record, p.id, GameMomentType.roundEnded, currentRound);
       }
     }
+    record.notifiedThisRound.clear();
 
     final nextRound = currentRound + 1;
     // Unlike observations, votes are kept forever (not just this round) —
@@ -1050,16 +1094,14 @@ class LocalGameRepository implements GameRepository {
       }
       return p;
     }).toList();
-    final round = record.game.currentRound;
-    var notified = const <String>{};
     if (accept) {
       // The recruiter here is whoever actually executed the approach
       // (recorded on the target's pendingRecruiterId), not necessarily
       // whoever originally proposed it — same distinction the Wire itself
       // already makes.
+      final round = record.game.currentRound;
       _recordMoment(record, recruiterId, GameMomentType.recruitmentExecuted, round);
       _recordMoment(record, playerId, GameMomentType.recruitedSwitchSides, round);
-      notified = {recruiterId, playerId};
     }
     _replaceGame(
       record,
@@ -1068,7 +1110,7 @@ class LocalGameRepository implements GameRepository {
     record.threadChanges.add(null);
     // Mirrors acknowledgeEliminationSignal: the real target responding is
     // narratively the end of the day, so resolve the round the same way.
-    _resolveRound(record, alreadyNotified: notified);
+    _resolveRound(record);
     return true;
   }
 
@@ -1094,5 +1136,15 @@ class LocalGameRepository implements GameRepository {
         record.acknowledgedMomentIds.add(m.id);
       }
     }
+  }
+
+  @override
+  Future<void> recordReentry({
+    required String gameId,
+    required String playerId,
+  }) async {
+    final record = _record(gameId);
+    _recordMoment(record, playerId, GameMomentType.reenteredCase, record.game.currentRound,
+        countsAsRoundActivity: false);
   }
 }
