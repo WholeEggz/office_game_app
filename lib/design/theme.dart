@@ -80,8 +80,13 @@ ThemeData buildOfficeGameTheme() {
       ),
     ),
     inputDecorationTheme: InputDecorationTheme(
+      // surfaceInput (not surfaceRaised) + borderStrong (not borderHairline)
+      // by default — an input often sits inside a surfaceRaised container
+      // (cards, boxed data rows), and matching that container's own fill/
+      // border made fields blend into their surroundings instead of
+      // reading as editable.
       filled: true,
-      fillColor: AppColors.surfaceRaised,
+      fillColor: AppColors.surfaceInput,
       hintStyle: AppTypography.body.copyWith(color: AppColors.textMuted),
       contentPadding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.md,
@@ -89,15 +94,15 @@ ThemeData buildOfficeGameTheme() {
       ),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppRadii.sm),
-        borderSide: const BorderSide(color: AppColors.borderHairline, width: 1),
+        borderSide: const BorderSide(color: AppColors.borderStrong, width: 1),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppRadii.sm),
-        borderSide: const BorderSide(color: AppColors.borderHairline, width: 1),
+        borderSide: const BorderSide(color: AppColors.borderStrong, width: 1),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppRadii.sm),
-        borderSide: const BorderSide(color: AppColors.borderStrong, width: 1),
+        borderSide: const BorderSide(color: AppColors.brass, width: 1.5),
       ),
     ),
     listTileTheme: const ListTileThemeData(

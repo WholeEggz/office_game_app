@@ -10,6 +10,11 @@ abstract final class AppColors {
   static const borderHairline = Color(0xFF3A3226);
   static const borderStrong = Color(0xFF4E4530);
 
+  /// A step brighter than `surfaceRaised`, for an editable field's own fill
+  /// when it sits inside a `surfaceRaised` container — otherwise the field
+  /// blends into its surroundings and doesn't read as interactive.
+  static const surfaceInput = Color(0xFF2E2818);
+
   // Text
   static const textPrimary = Color(0xFFEDE6D6);
   static const textSecondary = Color(0xFFA69B85);

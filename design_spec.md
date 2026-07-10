@@ -23,6 +23,7 @@ All values are fixed hex — this palette does not adapt to system light/dark mo
 | `surfaceRaised` | `#241F17` | Inputs, bottom sheets, anything that sits above `surface` |
 | `borderHairline` | `#3A3226` | Default 1px borders between/around surfaces |
 | `borderStrong` | `#4E4530` | Emphasized dividers, focused input border |
+| `surfaceInput` | `#2E2818` | An editable field's own fill when it sits inside a `surfaceRaised` container (e.g. the case creation roster figures) — one step brighter so it doesn't blend into its surroundings |
 
 ### Text
 
@@ -154,7 +155,7 @@ Fill `crimson`, label `onCrimson`. Reserve for actions with real narrative weigh
 No card wrapper — 1px `borderHairline` bottom border between rows, `spaceMd` vertical padding. Name in `body`/`textPrimary`, trailing action (e.g. "vote") as a text-style button in `brass`.
 
 ### Text input
-`surfaceRaised` background, 1px `borderHairline` (→ `borderStrong` on focus), `radiusSm`, input text in `body`, placeholder in `textMuted`.
+`surfaceInput` background, 1px `borderStrong` (→ `brass` on focus), `radiusSm`, input text in `body`, placeholder in `textMuted`. Brightened from an earlier `surfaceRaised`/`borderHairline` default after real-device testing showed fields blending into `surfaceRaised` containers (cards, boxed data rows) instead of reading as editable.
 
 ### Role badge
 Circle, 1px `brass` (or `crimson` for mafia) border, transparent fill, icon centered at 24–28px. Appears at the top of the role-reveal screen and can double as a small persistent identity marker elsewhere.
