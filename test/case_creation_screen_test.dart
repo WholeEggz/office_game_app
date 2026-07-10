@@ -65,6 +65,31 @@ void main() {
     expect(textAt(tester, 'expected_roster_total'), '5');
   });
 
+  testWidgets('the roster caption spells out the live numbers instead of "this many"',
+      (tester) async {
+    await tester.pumpWidget(const MaterialApp(
+      home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
+    ));
+
+    expect(find.textContaining('this many'), findsNothing);
+    expect(
+      find.textContaining('The case starts the moment 8 players have joined; '
+          '2 of them are drawn as mafia at random.'),
+      findsOneWidget,
+    );
+
+    await tester.enterText(villagersField(), '10');
+    await tester.pump();
+    await tester.enterText(mafiaField(), '3');
+    await tester.pump();
+
+    expect(
+      find.textContaining('The case starts the moment 13 players have joined; '
+          '3 of them are drawn as mafia at random.'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('the removed "villagers per mafia" and "hours to act" fields are gone', (tester) async {
     await tester.pumpWidget(const MaterialApp(
       home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),

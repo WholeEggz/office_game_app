@@ -89,6 +89,16 @@ class _CaseCreationScreenState extends State<CaseCreationScreen> {
     return roster.mafia / roster.villagers;
   }
 
+  /// Spells out the live roster numbers instead of "this many players" —
+  /// a reader can check the caption against the fields above without doing
+  /// the arithmetic themselves.
+  String _rosterCaption() {
+    final roster = _expectedRoster();
+    return 'The case starts the moment ${roster.total} players have joined; '
+        '${roster.mafia} of them are drawn as mafia at random. Recruitment '
+        'unlocks once mafia thin out to about this same starting split.';
+  }
+
   Future<void> _create() async {
     final repo = context.read<GameRepository>();
     final roster = _expectedRoster();
@@ -133,12 +143,7 @@ class _CaseCreationScreenState extends State<CaseCreationScreen> {
                     roster: _expectedRoster(),
                   ),
                   const SizedBox(height: AppSpacing.xs),
-                  Text(
-                    'The case starts the moment this many players have joined; '
-                    'this many of them are drawn as mafia at random. Recruitment '
-                    'unlocks once mafia thin out to about this same starting split.',
-                    style: AppTypography.dataSmall,
-                  ),
+                  Text(_rosterCaption(), style: AppTypography.dataSmall),
                   const SizedBox(height: AppSpacing.lg),
                   _BoxedDataField(
                     fieldKey: const ValueKey('daily_cutoff_field'),
