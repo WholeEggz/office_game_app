@@ -13,7 +13,7 @@ abstract final class AppColors {
   // Text
   static const textPrimary = Color(0xFFEDE6D6);
   static const textSecondary = Color(0xFFA69B85);
-  static const textMuted = Color(0xFF6B6252);
+  static const textMuted = Color(0xFF948972);
 
   // Brass — primary accent
   static const brass = Color(0xFFC9A227);

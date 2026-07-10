@@ -30,7 +30,9 @@ All values are fixed hex — this palette does not adapt to system light/dark mo
 |---|---|---|
 | `textPrimary` | `#EDE6D6` | Primary content — ivory, not pure white |
 | `textSecondary` | `#A69B85` | Supporting text, subtitles |
-| `textMuted` | `#6B6252` | Timestamps, hints, disabled labels |
+| `textMuted` | `#948972` | Timestamps, hints, disabled labels |
+
+Brightened from `#6B6252` after real-device testing showed it too low-contrast against `surface`/`surfaceRaised` to read comfortably.
 
 ### Brass (primary accent)
 
