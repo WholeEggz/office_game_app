@@ -340,8 +340,12 @@ class HelpScreen extends StatefulWidget {
 
 class _HelpScreenState extends State<HelpScreen> {
   final _searchController = TextEditingController();
+  // Seeded expanded (per the "starts expanded" requirement) *on the
+  // controller itself*, not via each tile's `initiallyExpanded` — the
+  // controller's `isExpanded` is the only state that survives a section
+  // scrolling off-screen and being disposed/recreated by the list below.
   late final List<ExpansibleController> _controllers =
-      List.generate(_sections.length, (_) => ExpansibleController());
+      List.generate(_sections.length, (_) => ExpansibleController()..expand());
   String _query = '';
   bool _allExpanded = true;
 
@@ -525,7 +529,13 @@ class _SectionTile extends StatelessWidget {
         ),
         child: ExpansionTile(
           controller: controller,
-          initiallyExpanded: true,
+          // Not a hardcoded `true` — read from the controller, which is
+          // the actual persistent state (survives this tile scrolling
+          // off-screen and being disposed/recreated; a hardcoded literal
+          // here would re-expand every off-screen section the instant it
+          // scrolled back into view, regardless of what "Collapse all"
+          // or an individual tap had just set).
+          initiallyExpanded: controller.isExpanded,
           iconColor: AppColors.brass,
           collapsedIconColor: AppColors.textSecondary,
           textColor: AppColors.textPrimary,
