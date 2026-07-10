@@ -8,7 +8,18 @@ import '../../design/spacing.dart';
 import '../../design/typography.dart';
 import '../../domain/models/game_moment.dart';
 
-enum _MomentTone { celebratory, drama, neutral }
+enum _MomentTone {
+  celebratory,
+  drama,
+
+  /// Worth knowing, but not personally earned or personally suffered — a
+  /// step brighter than [neutral] (it gets a sound, and a distinct
+  /// border), a step quieter than [celebratory]/[drama] (no haptic).
+  informational,
+
+  /// The "nothing happened" fallback — no haptic, no sound.
+  neutral,
+}
 
 typedef _MomentCopy = ({String title, String body, IconData icon, _MomentTone tone});
 
@@ -49,6 +60,44 @@ _MomentCopy _copyFor(GameMomentType type, int round) {
         body: 'Round $round: the case is over. Better luck in the next one.',
         icon: PhosphorIconsLight.doorOpen,
         tone: _MomentTone.drama,
+      );
+    case GameMomentType.mafiaUnmaskedByOthers:
+      return (
+        title: 'An Informant was unmasked',
+        body: "Round $round: the case advanced — someone else's vote "
+            "caught an Informant this round.",
+        icon: PhosphorIconsLight.newspaperClipping,
+        tone: _MomentTone.informational,
+      );
+    case GameMomentType.targetedByMafia:
+      return (
+        title: 'You were marked',
+        body: "Round $round: the Wire's signal found you — "
+            'you lost 1 vote weight.',
+        icon: PhosphorIconsLight.target,
+        tone: _MomentTone.drama,
+      );
+    case GameMomentType.targetedByVillagers:
+      return (
+        title: 'Voted against',
+        body: "Round $round: your fellow villagers' votes landed on you "
+            '— you lost 1 vote weight.',
+        icon: PhosphorIconsLight.target,
+        tone: _MomentTone.drama,
+      );
+    case GameMomentType.joinedCase:
+      return (
+        title: 'Welcome to the case',
+        body: "Round $round: you're in — good luck out there.",
+        icon: PhosphorIconsLight.handWaving,
+        tone: _MomentTone.celebratory,
+      );
+    case GameMomentType.reenteredCase:
+      return (
+        title: 'Welcome back',
+        body: 'Round $round: here\'s where things stand.',
+        icon: PhosphorIconsLight.arrowUUpLeft,
+        tone: _MomentTone.informational,
       );
     case GameMomentType.roundEnded:
       return (
@@ -91,6 +140,11 @@ Future<void> _showMomentDialog(BuildContext context, GameMoment moment) async {
     case _MomentTone.drama:
       HapticFeedback.heavyImpact();
       SystemSound.play(SystemSoundType.click);
+    case _MomentTone.informational:
+      // A click to mark it as worth noticing, but no haptic — this fires
+      // for things like "welcome back" that can happen on every single
+      // visit, and a buzz every time would wear thin fast.
+      SystemSound.play(SystemSoundType.click);
     case _MomentTone.neutral:
       // Deliberately quiet — this is the "nothing much happened" fallback,
       // not something worth a buzz or a click.
@@ -117,6 +171,7 @@ class _MomentDialogCard extends StatelessWidget {
     final accent = switch (copy.tone) {
       _MomentTone.celebratory => AppColors.brass,
       _MomentTone.drama => AppColors.crimson,
+      _MomentTone.informational => AppColors.textSecondary,
       _MomentTone.neutral => AppColors.borderStrong,
     };
     final reduceMotion = MediaQuery.of(context).disableAnimations;

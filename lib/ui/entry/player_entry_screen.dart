@@ -55,6 +55,8 @@ class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
         return;
       }
+    } else {
+      await repo.recordReentry(gameId: game.id, playerId: user.id);
     }
     if (!mounted) return;
     Navigator.of(context).push(MaterialPageRoute(

@@ -9,6 +9,21 @@ enum GameMomentType {
   /// vote weight reward for a correct read.
   correctVoteReward,
 
+  /// An Informant was unmasked this round by *someone else's* vote — for
+  /// every player who isn't the target and isn't a rewarded voter (see
+  /// [correctVoteReward]), so the case's biggest event of the round is
+  /// still acknowledged for them, just without personal credit.
+  mafiaUnmaskedByOthers,
+
+  /// The mafia's elimination signal landed on this villager — the target
+  /// of [GameRepository.executeElimination], discovering their own
+  /// weight loss.
+  targetedByMafia,
+
+  /// This villager's fellow villagers cast the round's winning vote
+  /// against *them*, eroding their weight the same way a mafia hit would.
+  targetedByVillagers,
+
   /// Successfully executed a recruitment — the target accepted.
   recruitmentExecuted,
 
@@ -20,6 +35,13 @@ enum GameMomentType {
 
   /// The case ended and this player's side lost.
   finaleLoss,
+
+  /// Just joined this case for the first time (as its creator or by
+  /// joining an existing one).
+  joinedCase,
+
+  /// Opened a case they'd already joined, on any visit after the first.
+  reenteredCase,
 
   /// A round ended with nothing more specific to report for this player —
   /// the fallback so a round never passes with zero acknowledgement.

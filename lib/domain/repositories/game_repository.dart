@@ -292,4 +292,15 @@ abstract class GameRepository {
     required String gameId,
     required String playerId,
   });
+
+  /// Records a [GameMomentType.reenteredCase] moment — call when a player
+  /// opens a case they've already joined (as opposed to [addPlayer] or
+  /// [createGame], which record [GameMomentType.joinedCase] for a first
+  /// visit). Scoped to the real player flow ("Enter" on an already-joined
+  /// case); the debug role switcher's own "Enter" doesn't call this, since
+  /// it already intentionally replays other ceremonies on every visit.
+  Future<void> recordReentry({
+    required String gameId,
+    required String playerId,
+  });
 }
