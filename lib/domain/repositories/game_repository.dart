@@ -1,4 +1,5 @@
 import '../models/game.dart';
+import '../models/game_moment.dart';
 import '../models/mafia_thread_entry.dart';
 import '../models/observation.dart';
 import '../models/player.dart';
@@ -270,5 +271,25 @@ abstract class GameRepository {
     required String gameId,
     required String playerId,
     required bool accept,
+  });
+
+  /// Every [GameMoment] recorded for [playerId] in this game that hasn't
+  /// been acknowledged yet (see [acknowledgeAllMoments]), oldest first —
+  /// however many rounds' worth accumulated since they last checked in.
+  /// A UI showing these should still collapse consecutive
+  /// [GameMomentType.roundEnded] entries with nothing else to say down to
+  /// just the most recent one; every other type is specific enough to
+  /// show in full.
+  Future<List<GameMoment>> fetchUnacknowledgedMoments({
+    required String gameId,
+    required String playerId,
+  });
+
+  /// Marks every currently-unacknowledged moment for [playerId] in this
+  /// game as seen — call after presenting whatever [fetchUnacknowledgedMoments]
+  /// just returned, so the same moments don't resurface next time.
+  Future<void> acknowledgeAllMoments({
+    required String gameId,
+    required String playerId,
   });
 }

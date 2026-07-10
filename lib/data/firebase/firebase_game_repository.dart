@@ -1,4 +1,5 @@
 import '../../domain/models/game.dart';
+import '../../domain/models/game_moment.dart';
 import '../../domain/models/mafia_thread_entry.dart';
 import '../../domain/models/observation.dart';
 import '../../domain/models/player.dart';
@@ -183,6 +184,20 @@ class FirebaseGameRepository implements GameRepository {
     required String gameId,
     required String playerId,
     required bool accept,
+  }) =>
+      throw UnimplementedError();
+
+  @override
+  Future<List<GameMoment>> fetchUnacknowledgedMoments({
+    required String gameId,
+    required String playerId,
+  }) =>
+      throw UnimplementedError();
+
+  @override
+  Future<void> acknowledgeAllMoments({
+    required String gameId,
+    required String playerId,
   }) =>
       throw UnimplementedError();
 }
