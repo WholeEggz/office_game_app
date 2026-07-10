@@ -32,7 +32,7 @@ to add 8+ names to reach the mafia-count / recruitment tests.
 | 0.8 | Tap "Join" on a case you're not in | You're added to its roster, then land straight in your own `GameScreen` (role-reveal ceremony plays) |
 | 0.9 | Go back to "Find your case" for a case you already joined | Its button now reads "Enter" instead of "Join" — tapping it re-enters your existing `GameScreen` without calling join again |
 | 0.10 | With two cases open, check that each only lists players who joined *that* case | No cross-contamination between cases in the list's player counts |
-| 0.11 | Create a case with minimum players = 4 (§0b), then join it as 3 more distinct players (through "Find your case" → "Join", not the tester flow) until the roster reaches 4 | The instant the 4th player joins, the game flips to `active` on its own — no "Start the game" button exists anywhere in this flow, and none of the 4 needed to do anything beyond joining. Re-enter as each player: at least one is mafia, not all 4 villagers (regression test — this used to silently never start, since only the tester flow's manual button triggered role assignment) |
+| 0.11 | Create a case with villagers = 3, mafia = 1 (§0b, for 4 total players), then join it as 3 more distinct players (through "Find your case" → "Join", not the tester flow) until the roster reaches 4 | The instant the 4th player joins, the game flips to `active` on its own — no "Start the game" button exists anywhere in this flow, and none of the 4 needed to do anything beyond joining. Re-enter as each player: at least one is mafia, not all 4 villagers (regression test — this used to silently never start, since only the tester flow's manual button triggered role assignment) |
 
 ---
 
@@ -41,12 +41,17 @@ to add 8+ names to reach the mafia-count / recruitment tests.
 Reached from "Start a new case" (§0.6). All fields have fixed starting
 defaults (not suggestions derived from anything else you type), so leaving
 everything untouched reproduces the exact behavior from before this screen
-existed.
+existed. The "Defaults match what the concept doc recommends..." blurb
+that used to sit under the "Case settings" header is gone — the screen
+just shows the fields now.
 
 The old "Minimum players to start" and "Players per mafia member" text
 fields are gone — the players/villagers/mafia roster summary itself is now
-the input: "players" and "mafia" are directly editable, "villagers" is
-shown as the read-only difference between them.
+the input: "villagers" and "mafia" are directly editable, "players" is
+shown as the read-only sum of the two (this is a change from an earlier
+version of this screen, where "players" was the editable field and
+"villagers" was the derived one — villagers+mafia now feels like the more
+natural way to build a roster).
 
 The old "Villagers per mafia member to unlock recruitment" and "Hours to
 act on an agreed signal before it lapses" fields are gone too — there's no
@@ -58,16 +63,16 @@ settings later — not yet.)
 
 | # | Steps | Expected |
 |---|---|---|
-| 0b.1 | Open the screen | Fields: "Case name" (prefilled "The Office"), then a roster summary row reading "8 players" (editable) / "6 villagers" (read-only) / "2 mafia" (editable), a caption below it, a boxed "DAILY VOTE CUTOFF" field (prefilled "17:00") styled to match the roster row (monospace value, same card background/border), a caption below it, "Open the case" button |
-| 0b.2 | Edit "players" to 12, without touching "mafia" | "villagers" updates live to 10; "mafia" stays at 2 — nothing here suggests a new mafia value based on the player count anymore |
-| 0b.3 | Edit "mafia" to 3, without touching "players" | "villagers" updates live to 9 (12 − 3); "players" stays at 12 |
-| 0b.4 | Set "mafia" higher than "players" (e.g. players 4, mafia 99) | "villagers" shows 0, not a negative number |
-| 0b.5 | Set players to 4, leave mafia at its default 2, create + join 3 more players | The 4th join triggers the finale screen immediately — 2 mafia against 2 villagers is already parity (§12), so the case never actually becomes playable at this exact split. Good to know before picking a small player count and leaving mafia untouched |
-| 0b.6 | Set "mafia" to 1, players to 4, then create + join 3 more players | Exactly 1 mafia among the 4, matching §0.11's auto-start regression test |
-| 0b.7 | Create a case with players = 10, mafia = 2 (8 villagers), start it, then check "The Wire" as mafia for a "Propose recruitment" option | Available immediately from round 1 — the threshold is computed as *exactly* this case's own starting ratio (2/8 = 0.25), so the starting ratio always already satisfies "at or below the threshold." Unlike the tester flow's fixed 0.2 default (§6), a case created here never starts out recruitment-locked |
+| 0b.1 | Open the screen | Fields: "Case name" (prefilled "The Office"), then a roster summary row reading "8 players" (read-only) / "6 villagers" (editable) / "2 mafia" (editable), a caption below it, a boxed "DAILY VOTE CUTOFF" field (prefilled "17:00") styled to match the roster row (monospace value, same card background/border), a caption below it, "Open the case" button |
+| 0b.2 | Edit "villagers" to 10, without touching "mafia" | "players" updates live to 12; "mafia" stays at 2 — nothing here suggests a new mafia value based on the villager count anymore |
+| 0b.3 | Edit "mafia" to 3, without touching "villagers" | "players" updates live to 9 (6 + 3); "villagers" stays at 6 |
+| 0b.4 | Set "mafia" to 0 or leave it blank | "mafia" floors at 1 for the purposes of "players" (mirrors the repo's own game-start floor), so "players" reads villagers + 1, not villagers |
+| 0b.5 | Set villagers to 2, leave mafia at its default 2, create + join enough players | The moment the roster fills, the finale screen appears immediately — 2 mafia against 2 villagers is already parity (§12), so the case never actually becomes playable at this exact split. Good to know before picking a small villager count and leaving mafia untouched |
+| 0b.6 | Set "mafia" to 1, villagers to 3, then create + join 3 more players | Exactly 1 mafia among the 4, matching §0.11's auto-start regression test |
+| 0b.7 | Create a case with villagers = 8, mafia = 2 (10 players total), start it, then check "The Wire" as mafia for a "Propose recruitment" option | Available immediately from round 1 — the threshold is computed as *exactly* this case's own starting ratio (2/8 = 0.25), so the starting ratio always already satisfies "at or below the threshold." Unlike the tester flow's fixed 0.2 default (§6), a case created here never starts out recruitment-locked |
 | 0b.8 | Set "Daily vote cutoff" to a time a minute or two from now (24h format, e.g. "14:32") | See §13 for what this actually does once the case is running |
 | 0b.9 | Type something unparseable into "Daily vote cutoff" (e.g. "banana") and create the case | Falls back to the 17:00 default rather than crashing or blocking case creation |
-| 0b.10 | Leave every field at its default (8 players, 2 mafia, 17:00 cutoff) and create a case | 2 mafia among the 8; recruitment unlock threshold computed as 2/6 ≈ 0.33 (this case's own starting split); 1-hour execution window; 17:00 daily cutoff |
+| 0b.10 | Leave every field at its default (6 villagers, 2 mafia, 17:00 cutoff) and create a case | 8 players total; 2 mafia among them; recruitment unlock threshold computed as 2/6 ≈ 0.33 (this case's own starting split); 1-hour execution window; 17:00 daily cutoff |
 
 ---
 
@@ -280,8 +285,8 @@ anyone who's left — see §10). Whichever crosses first ends the case, for
 good.
 
 Recommended setup for testing this without a huge roster: create a case
-with players = 4 and mafia = 1 (§0b) so you start with exactly 1 mafia, 3
-villagers — one successful unmask ends it immediately.
+with villagers = 3 and mafia = 1 (§0b), for 4 total players — one
+successful unmask ends it immediately.
 
 | # | Steps | Expected |
 |---|---|---|
@@ -289,7 +294,7 @@ villagers — one successful unmask ends it immediately.
 | 12.2 | Re-enter any player (mafia or villager) after the case ended | Same finale screen appears again — it's driven by `Game.status`, not a one-time ceremony, so it's stable to revisit |
 | 12.3 | As any player, try to vote, propose an elimination/recruitment, send a mafia message, or log an observation via the tester's debug tools against this now-ended game | Every one throws/rejects ("This case is closed") — nothing is actionable anymore, not just hidden in the UI |
 | 12.4 | From "Find your case" (§0), check this ended case in the list | Status reads "ended"; a **member** sees an "Enter" button (to view the finale); a **non-member** sees a disabled "Closed" button instead of "Join" |
-| 12.5 | Set up a game where mafia can reach parity via recruitment (e.g. players 4, mafia 1 from §0b — recruitment is unlocked from round 1 by default now, no extra setup needed) and have the sole mafia member successfully recruit one villager | The instant the recruit accepts, the finale screen appears instead of the round just continuing — headline "The Mafia Wins" in crimson, same mafia-roster list (now including the newly recruited member) |
+| 12.5 | Set up a game where mafia can reach parity via recruitment (e.g. villagers 3, mafia 1 from §0b, for 4 total players — recruitment is unlocked from round 1 by default now, no extra setup needed) and have the sole mafia member successfully recruit one villager | The instant the recruit accepts, the finale screen appears instead of the round just continuing — headline "The Mafia Wins" in crimson, same mafia-roster list (now including the newly recruited member) |
 | 12.6 | In a game partway through §12.5's setup, have enough villagers leave (§10) to tip mafia into parity with those remaining | Leaving itself can trigger the finale — you don't need a vote or recruitment event, just the departure crossing the threshold |
 
 ---

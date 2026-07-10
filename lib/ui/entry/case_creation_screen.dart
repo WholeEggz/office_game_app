@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -22,28 +24,28 @@ class CaseCreationScreen extends StatefulWidget {
 
 class _CaseCreationScreenState extends State<CaseCreationScreen> {
   final _nameController = TextEditingController(text: 'The Office');
-  // Fixed starting defaults only — unlike an earlier version of this
-  // screen, nothing here suggests a value based on what you typed
-  // elsewhere. Editing "players" doesn't touch "mafia" or vice versa.
-  final _totalPlayersController = TextEditingController(text: '8');
+  // Fixed starting defaults only — nothing here suggests a value based on
+  // what you typed elsewhere. Editing "villagers" doesn't touch "mafia" or
+  // vice versa; "players" is just their sum, shown read-only.
+  final _villagersController = TextEditingController(text: '6');
   final _mafiaCountController = TextEditingController(text: '2');
   final _dailyCutoffController = TextEditingController(text: '17:00');
 
   @override
   void initState() {
     super.initState();
-    // Repaints the derived "villagers" figure live as either editable
-    // stat changes.
-    _totalPlayersController.addListener(_refreshSummary);
+    // Repaints the derived "players" total live as either editable stat
+    // changes.
+    _villagersController.addListener(_refreshSummary);
     _mafiaCountController.addListener(_refreshSummary);
   }
 
   @override
   void dispose() {
-    _totalPlayersController.removeListener(_refreshSummary);
+    _villagersController.removeListener(_refreshSummary);
     _mafiaCountController.removeListener(_refreshSummary);
     _nameController.dispose();
-    _totalPlayersController.dispose();
+    _villagersController.dispose();
     _mafiaCountController.dispose();
     _dailyCutoffController.dispose();
     super.dispose();
@@ -62,16 +64,17 @@ class _CaseCreationScreenState extends State<CaseCreationScreen> {
 
   void _refreshSummary() => setState(() {});
 
-  /// Mirrors the actual game-start clamp in
+  /// Villagers and mafia are the two directly-editable counts; "players" is
+  /// just their sum, shown read-only rather than editable — matches how a
+  /// real case is built (recruit some villagers, decide how many are
+  /// mafia), and mirrors the actual game-start floor in
   /// `LocalGameRepository._activateGame` (`mafiaCount.clamp(1, players)`)
   /// so this preview never drifts from what creating the case will really
   /// produce.
   ({int total, int villagers, int mafia}) _expectedRoster() {
-    final total = int.tryParse(_totalPlayersController.text.trim()) ?? 0;
-    if (total <= 0) return (total: 0, villagers: 0, mafia: 0);
-    final requestedMafia = int.tryParse(_mafiaCountController.text.trim()) ?? 2;
-    final mafia = requestedMafia.clamp(1, total);
-    return (total: total, villagers: total - mafia, mafia: mafia);
+    final villagers = max(0, int.tryParse(_villagersController.text.trim()) ?? 0);
+    final mafia = max(1, int.tryParse(_mafiaCountController.text.trim()) ?? 2);
+    return (total: villagers + mafia, villagers: villagers, mafia: mafia);
   }
 
   /// No separate "villagers per mafia to unlock recruitment" setting
@@ -88,12 +91,13 @@ class _CaseCreationScreenState extends State<CaseCreationScreen> {
 
   Future<void> _create() async {
     final repo = context.read<GameRepository>();
+    final roster = _expectedRoster();
     final game = await repo.createGame(
       locationTag: _nameController.text.trim().isEmpty ? 'The Office' : _nameController.text.trim(),
-      minPlayers: int.tryParse(_totalPlayersController.text.trim()) ?? 8,
+      minPlayers: roster.total,
       creatorId: widget.creator.id,
       creatorName: widget.creator.displayName,
-      mafiaCount: int.tryParse(_mafiaCountController.text.trim()) ?? 2,
+      mafiaCount: roster.mafia,
       recruitmentUnlockThreshold: _recruitmentUnlockThreshold(),
       executionWindow: const Duration(hours: 1),
       dailyCutoffTime: _parseDailyCutoff(_dailyCutoffController.text),
@@ -113,12 +117,6 @@ class _CaseCreationScreenState extends State<CaseCreationScreen> {
           padding: const EdgeInsets.all(AppSpacing.lg),
           children: [
             Text('Case settings', style: AppTypography.displayMedium),
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              'Defaults match what the concept doc recommends starting with — '
-              'change anything you want to test differently.',
-              style: AppTypography.bodySmall,
-            ),
             const SizedBox(height: AppSpacing.xl),
             DossierCard(
               child: Column(
@@ -130,7 +128,7 @@ class _CaseCreationScreenState extends State<CaseCreationScreen> {
                   ),
                   const SizedBox(height: AppSpacing.lg),
                   _EditableRosterSummary(
-                    totalController: _totalPlayersController,
+                    villagersController: _villagersController,
                     mafiaController: _mafiaCountController,
                     roster: _expectedRoster(),
                   ),
@@ -167,12 +165,12 @@ class _CaseCreationScreenState extends State<CaseCreationScreen> {
 }
 
 class _EditableRosterSummary extends StatelessWidget {
-  final TextEditingController totalController;
+  final TextEditingController villagersController;
   final TextEditingController mafiaController;
   final ({int total, int villagers, int mafia}) roster;
 
   const _EditableRosterSummary({
-    required this.totalController,
+    required this.villagersController,
     required this.mafiaController,
     required this.roster,
   });
@@ -189,16 +187,16 @@ class _EditableRosterSummary extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          _EditableRosterFigure(
-            fieldKey: const ValueKey('roster_total_field'),
-            controller: totalController,
+          _RosterFigure(
+            valueKey: const ValueKey('expected_roster_total'),
             label: 'players',
+            value: roster.total,
             color: AppColors.textPrimary,
           ),
-          _RosterFigure(
-            valueKey: const ValueKey('expected_roster_villagers'),
+          _EditableRosterFigure(
+            fieldKey: const ValueKey('roster_villagers_field'),
+            controller: villagersController,
             label: 'villagers',
-            value: roster.villagers,
             color: AppColors.brass,
           ),
           _EditableRosterFigure(
