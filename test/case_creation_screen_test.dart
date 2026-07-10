@@ -83,6 +83,8 @@ void main() {
       ),
     ));
 
+    await tester.ensureVisible(find.text('Open the case'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Open the case'));
     await tester.pumpAndSettle();
 
@@ -109,6 +111,8 @@ void main() {
     await tester.enterText(mafiaField(), '2');
     await tester.pump();
 
+    await tester.ensureVisible(find.text('Open the case'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Open the case'));
     await tester.pumpAndSettle();
 
@@ -130,6 +134,8 @@ void main() {
     expect(tester.widget<TextField>(cutoffField()).controller!.text, '17:00');
 
     await tester.enterText(cutoffField(), '09:15');
+    await tester.ensureVisible(find.text('Open the case'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Open the case'));
     await tester.pumpAndSettle();
 

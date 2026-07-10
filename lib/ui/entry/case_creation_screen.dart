@@ -139,7 +139,7 @@ class _CaseCreationScreenState extends State<CaseCreationScreen> {
                     'The case starts the moment this many players have joined; '
                     'this many of them are drawn as mafia at random. Recruitment '
                     'unlocks once mafia thin out to about this same starting split.',
-                    style: AppTypography.dataSmall,
+                    style: AppTypography.bodySmall,
                   ),
                   const SizedBox(height: AppSpacing.lg),
                   _BoxedDataField(
@@ -152,7 +152,7 @@ class _CaseCreationScreenState extends State<CaseCreationScreen> {
                   Text(
                     "Votes resolve on their own at this time each day — "
                     'no one needs to press anything.',
-                    style: AppTypography.dataSmall,
+                    style: AppTypography.bodySmall,
                   ),
                   const SizedBox(height: AppSpacing.lg),
                   ElevatedButton(onPressed: _create, child: const Text('Open the case')),
