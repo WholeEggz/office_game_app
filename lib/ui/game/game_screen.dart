@@ -1382,15 +1382,18 @@ class _MafiaSectionState extends State<_MafiaSection> {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  for (final entry in entries.reversed)
+                  // Oldest first, newest last — same convention as any
+                  // chat app, so the latest message sits right above the
+                  // composer below instead of jumping to the top.
+                  for (final entry in entries)
                     Padding(
-                      // A new message/proposal shifts every later entry
-                      // down one position in this reversed list. Without a
-                      // stable key, Flutter's unkeyed reconciliation
-                      // reuses each element in place by position — so a
+                      // A new message/proposal is appended after every
+                      // earlier entry, so without a stable key here,
+                      // Flutter's unkeyed reconciliation would reuse each
+                      // element in place by position and a
                       // `_MafiaThreadEntryTileState` (and its live
-                      // countdown Timer) can end up silently reattached to
-                      // a *different* entry after the shift.
+                      // countdown Timer) could end up silently reattached
+                      // to a *different* entry as the list grows.
                       key: ValueKey(entry.id),
                       padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                       child: SizedBox(
@@ -1872,7 +1875,10 @@ class _ObservationSectionState extends State<_ObservationSection> {
               }
               return Column(
                 children: [
-                  for (final o in observations.reversed)
+                  // Oldest first, newest last — same convention as any
+                  // chat app, so the latest note sits right above the
+                  // composer below.
+                  for (final o in observations)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
                       child: Align(

@@ -223,7 +223,7 @@ villagers = exactly 0.2, right at the "roughly 1:5" threshold.
 | # | Steps | Expected |
 |---|---|---|
 | 7.1 | Enter as any player, open "Observation Log" card | Dropdown defaulting to "General observation", a text field, a submit icon button |
-| 7.2 | Type a general note, submit | Appears at the top of the log (most recent first), prefixed with the author's own name (e.g. "Alice: xxxx") — every entry names who wrote it, not just who it's about |
+| 7.2 | Type a general note, submit | Appears at the bottom of the log, right above the input row (oldest-first, newest-last — same convention as a chat app), prefixed with the author's own name (e.g. "Alice: xxxx") — every entry names who wrote it, not just who it's about |
 | 7.3 | Pick "About <name>" from the dropdown, type a note, submit | Appears as "<author> about <target>: <text>" (e.g. "Mark about Ben: xxxx") — both who logged it and who it's about are shown |
 | 7.4 | Resolve 3+ rounds (repeat §5.4) without adding new observations | Once the log's round is more than 3 rounds behind the current round, the old entries disappear — confirms the retention window, not just a filtered display |
 
