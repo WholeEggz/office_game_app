@@ -22,6 +22,7 @@ import '../common/noir_copy.dart';
 import '../common/role_badge.dart';
 import '../common/vote_weight_pill.dart';
 import '../help/help_screen.dart';
+import 'moment_dialog.dart';
 
 /// Runs a repository action that may throw a [StateError] from a race
 /// condition or a stale view of shared state (someone else's action beat
@@ -105,6 +106,8 @@ class _GameScreenState extends State<GameScreen> {
   bool _showRoleReveal = true;
   bool _lastKnownUnmasked = false;
   bool _unmaskDialogShown = false;
+  StreamSubscription<Game>? _momentsSubscription;
+  bool _checkingMoments = false;
 
   // Created once and reused for the lifetime of this screen. Calling
   // `repo.watchXyz(...)` directly inside `build()` would hand a brand-new
@@ -164,6 +167,44 @@ class _GameScreenState extends State<GameScreen> {
     });
   }
 
+  /// Subscribed once, the first time the dashboard is actually showing
+  /// (never while the role-reveal ceremony is still up front — a moment
+  /// dialog popping up underneath it would be a mess). Runs an initial
+  /// check right away (catches up on anything that happened while this
+  /// player wasn't looking), then again on every subsequent game change —
+  /// which also covers the case where the moment belongs to whoever's
+  /// live in the app right now, e.g. the mafia member who just executed a
+  /// recruitment themselves.
+  void _startWatchingForMoments() {
+    if (_momentsSubscription != null) return;
+    _checkForMoments();
+    _momentsSubscription = _gameStream.listen((_) => _checkForMoments());
+  }
+
+  Future<void> _checkForMoments() async {
+    if (_checkingMoments) return;
+    _checkingMoments = true;
+    try {
+      final repo = context.read<GameRepository>();
+      final moments = await repo.fetchUnacknowledgedMoments(
+        gameId: widget.gameId,
+        playerId: widget.playerId,
+      );
+      if (moments.isEmpty) return;
+      await repo.acknowledgeAllMoments(gameId: widget.gameId, playerId: widget.playerId);
+      if (!mounted) return;
+      await presentMoments(context, selectMomentsToShow(moments));
+    } finally {
+      _checkingMoments = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _momentsSubscription?.cancel();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<Player>>(
@@ -193,6 +234,8 @@ class _GameScreenState extends State<GameScreen> {
             onContinue: () => setState(() => _showRoleReveal = false),
           );
         }
+
+        _startWatchingForMoments();
 
         return _Dashboard(
           gameId: widget.gameId,

@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:uuid/uuid.dart';
 
 import '../../domain/models/game.dart';
+import '../../domain/models/game_moment.dart';
 import '../../domain/models/mafia_thread_entry.dart';
 import '../../domain/models/observation.dart';
 import '../../domain/models/player.dart';
@@ -48,6 +49,14 @@ class _GameRecord {
   final List<MafiaThreadEntry> mafiaThread = [];
   final List<Observation> observations = [];
   final List<Vote> votes = [];
+
+  /// Every [GameMoment] ever recorded for this game, across all players —
+  /// filtered per-viewer in [LocalGameRepository.fetchUnacknowledgedMoments].
+  /// Kept forever (like votes, unlike the ephemeral observation log) since
+  /// there's no reason a "you won" or "good catch" moment should ever
+  /// silently expire before someone gets to see it.
+  final List<GameMoment> moments = [];
+  final Set<String> acknowledgedMomentIds = {};
 
   /// Pending lapse timers, keyed by proposal id — cancelled the moment a
   /// proposal is executed or the round ends first.
@@ -133,6 +142,20 @@ class LocalGameRepository implements GameRepository {
     }
     if (winner != null) {
       _replaceGame(record, game.copyWith(status: GameStatus.ended, winner: winner));
+      // "Ever mafia" (not just currently-mafia) mirrors the finale
+      // screen's own "THE MAFIA" list — someone unmasked earlier or who
+      // left mid-game is still on the mafia side for win/loss purposes.
+      for (final p in game.players) {
+        final everMafia = p.role == PlayerRole.mafia || p.wasUnmasked;
+        final onWinningSide =
+            winner == GameWinner.mafia ? everMafia : !everMafia;
+        _recordMoment(
+          record,
+          p.id,
+          onWinningSide ? GameMomentType.finaleWin : GameMomentType.finaleLoss,
+          record.game.currentRound,
+        );
+      }
     }
   }
 
@@ -147,6 +170,17 @@ class LocalGameRepository implements GameRepository {
         .map((p) => p.id == playerId ? update(p) : p)
         .toList(growable: false);
     _replaceGame(record, record.game.copyWith(players: players));
+  }
+
+  void _recordMoment(_GameRecord record, String playerId, GameMomentType type, int round) {
+    record.moments.add(GameMoment(
+      id: _uuid.v4(),
+      gameId: record.game.id,
+      playerId: playerId,
+      type: type,
+      round: round,
+      createdAt: DateTime.now(),
+    ));
   }
 
   @override
@@ -732,8 +766,12 @@ class LocalGameRepository implements GameRepository {
   /// Tallies the current round's votes and advances to the next one —
   /// shared by the manual debug "resolve" button and by the real target
   /// acknowledging an executed elimination signal, since that's meant to
-  /// end the day the same way.
-  void _resolveRound(_GameRecord record) {
+  /// end the day the same way. [alreadyNotified] is who this round's more
+  /// specific caller (currently only [respondToRecruitment]) already
+  /// recorded a [GameMoment] for — they're skipped for the generic
+  /// [GameMomentType.roundEnded] fallback below, so nobody gets both "you
+  /// were recruited" and "the round ended" for the same round.
+  void _resolveRound(_GameRecord record, {Set<String> alreadyNotified = const {}}) {
     final game = record.game;
     final currentRound = game.currentRound;
     final roundVotes = record.votes.where((v) => v.round == currentRound).toList();
@@ -757,6 +795,7 @@ class LocalGameRepository implements GameRepository {
     });
 
     var players = game.players;
+    final notified = {...alreadyNotified};
     if (winnerId != null && bestWeight > 0) {
       final target = game.playerById(winnerId!)!;
       if (target.role == PlayerRole.mafia && !target.wasUnmasked) {
@@ -775,6 +814,10 @@ class LocalGameRepository implements GameRepository {
           }
           return p;
         }).toList();
+        for (final voterId in rewardedVoterIds) {
+          _recordMoment(record, voterId, GameMomentType.correctVoteReward, currentRound);
+        }
+        notified.addAll(rewardedVoterIds);
       } else {
         // Voted for a villager instead: the vote still lands, it just
         // erodes their weight the same way a mafia elimination would —
@@ -785,6 +828,15 @@ class LocalGameRepository implements GameRepository {
           }
           return p;
         }).toList();
+      }
+    }
+
+    // The generic fallback: everyone still in the game who didn't already
+    // get something more specific this round, so a round never passes
+    // with zero acknowledgement for anyone.
+    for (final p in game.players) {
+      if (!notified.contains(p.id)) {
+        _recordMoment(record, p.id, GameMomentType.roundEnded, currentRound);
       }
     }
 
@@ -998,6 +1050,17 @@ class LocalGameRepository implements GameRepository {
       }
       return p;
     }).toList();
+    final round = record.game.currentRound;
+    var notified = const <String>{};
+    if (accept) {
+      // The recruiter here is whoever actually executed the approach
+      // (recorded on the target's pendingRecruiterId), not necessarily
+      // whoever originally proposed it — same distinction the Wire itself
+      // already makes.
+      _recordMoment(record, recruiterId, GameMomentType.recruitmentExecuted, round);
+      _recordMoment(record, playerId, GameMomentType.recruitedSwitchSides, round);
+      notified = {recruiterId, playerId};
+    }
     _replaceGame(
       record,
       record.game.copyWith(players: players, recruitmentSignConfirmed: true),
@@ -1005,7 +1068,31 @@ class LocalGameRepository implements GameRepository {
     record.threadChanges.add(null);
     // Mirrors acknowledgeEliminationSignal: the real target responding is
     // narratively the end of the day, so resolve the round the same way.
-    _resolveRound(record);
+    _resolveRound(record, alreadyNotified: notified);
     return true;
+  }
+
+  @override
+  Future<List<GameMoment>> fetchUnacknowledgedMoments({
+    required String gameId,
+    required String playerId,
+  }) async {
+    final record = _record(gameId);
+    return record.moments
+        .where((m) => m.playerId == playerId && !record.acknowledgedMomentIds.contains(m.id))
+        .toList();
+  }
+
+  @override
+  Future<void> acknowledgeAllMoments({
+    required String gameId,
+    required String playerId,
+  }) async {
+    final record = _record(gameId);
+    for (final m in record.moments) {
+      if (m.playerId == playerId) {
+        record.acknowledgedMomentIds.add(m.id);
+      }
+    }
   }
 }
