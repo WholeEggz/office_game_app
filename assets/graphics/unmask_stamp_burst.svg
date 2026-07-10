@@ -1,0 +1,18 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor">
+  <circle cx="50" cy="50" r="30" stroke-width="2"/>
+  <g stroke-width="2.5">
+    <line x1="82" y1="50" x2="98" y2="50"/>
+    <line x1="77.71" y1="66" x2="84.64" y2="70"/>
+    <line x1="66" y1="77.71" x2="74" y2="91.57"/>
+    <line x1="50" y1="82" x2="50" y2="90"/>
+    <line x1="34" y1="77.71" x2="26" y2="91.57"/>
+    <line x1="22.29" y1="66" x2="15.36" y2="70"/>
+    <line x1="18" y1="50" x2="2" y2="50"/>
+    <line x1="22.29" y1="34" x2="15.36" y2="30"/>
+    <line x1="34" y1="22.29" x2="26" y2="8.43"/>
+    <line x1="50" y1="18" x2="50" y2="10"/>
+    <line x1="66" y1="22.29" x2="74" y2="8.43"/>
+    <line x1="77.71" y1="34" x2="84.64" y2="30"/>
+  </g>
+  <circle cx="50" cy="50" r="6" fill="currentColor" stroke="none"/>
+</svg>
