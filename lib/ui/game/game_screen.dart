@@ -21,6 +21,7 @@ import '../common/dossier_card.dart';
 import '../common/noir_copy.dart';
 import '../common/role_badge.dart';
 import '../common/vote_weight_pill.dart';
+import '../help/help_screen.dart';
 
 /// Runs a repository action that may throw a [StateError] from a race
 /// condition or a stale view of shared state (someone else's action beat
@@ -821,6 +822,13 @@ class _DashboardState extends State<_Dashboard> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
             child: Center(child: VoteWeightPill(weight: self.voteWeight)),
+          ),
+          IconButton(
+            icon: Icon(PhosphorIconsLight.bookOpenText, color: AppColors.textSecondary),
+            tooltip: 'How to play',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const HelpScreen()),
+            ),
           ),
           IconButton(
             icon: Icon(PhosphorIconsLight.signOut, color: AppColors.textSecondary),

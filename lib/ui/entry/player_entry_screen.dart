@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:provider/provider.dart';
 
 import '../../design/colors.dart';
@@ -11,6 +12,7 @@ import '../../domain/repositories/auth_service.dart';
 import '../../domain/repositories/game_repository.dart';
 import '../common/dossier_card.dart';
 import '../game/game_screen.dart';
+import '../help/help_screen.dart';
 import 'case_creation_screen.dart';
 
 /// The real player's path: register once, then find and join a game from
@@ -69,7 +71,18 @@ class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Join a case')),
+      appBar: AppBar(
+        title: const Text('Join a case'),
+        actions: [
+          IconButton(
+            icon: Icon(PhosphorIconsLight.bookOpenText, color: AppColors.textSecondary),
+            tooltip: 'How to play',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const HelpScreen()),
+            ),
+          ),
+        ],
+      ),
       body: SafeArea(
         child: _user == null ? _buildRegisterForm() : _buildGameList(_user!),
       ),

@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
+import '../../design/colors.dart';
 import '../../design/graphics.dart';
 import '../../design/spacing.dart';
 import '../../design/typography.dart';
 import '../common/dossier_card.dart';
+import '../help/help_screen.dart';
 import '../role_switcher/role_switcher_screen.dart';
 import 'player_entry_screen.dart';
 
@@ -17,7 +20,18 @@ class EntryScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Office Game')),
+      appBar: AppBar(
+        title: const Text('Office Game'),
+        actions: [
+          IconButton(
+            icon: Icon(PhosphorIconsLight.bookOpenText, color: AppColors.textSecondary),
+            tooltip: 'How to play',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const HelpScreen()),
+            ),
+          ),
+        ],
+      ),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(AppSpacing.lg),
