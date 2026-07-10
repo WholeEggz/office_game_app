@@ -1879,8 +1879,8 @@ class _ObservationSectionState extends State<_ObservationSection> {
                         alignment: Alignment.centerLeft,
                         child: Text(
                           o.targetPlayerId == null
-                              ? o.text
-                              : '${_nameFor(o.targetPlayerId!)}: ${o.text}',
+                              ? '${_nameFor(o.authorId)}: ${o.text}'
+                              : '${_nameFor(o.authorId)} about ${_nameFor(o.targetPlayerId!)}: ${o.text}',
                           style: AppTypography.bodySmall.copyWith(color: AppColors.textPrimary),
                         ),
                       ),
@@ -1911,7 +1911,7 @@ class _ObservationSectionState extends State<_ObservationSection> {
               ),
               const SizedBox(width: AppSpacing.sm),
               IconButton(
-                icon: Icon(PhosphorIconsLight.magnifyingGlass, color: AppColors.brass),
+                icon: Icon(PhosphorIconsLight.paperPlaneTilt, color: AppColors.brass),
                 onPressed: () {
                   final text = _textController.text.trim();
                   if (text.isEmpty) return;

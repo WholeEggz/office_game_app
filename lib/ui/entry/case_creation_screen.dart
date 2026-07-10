@@ -96,7 +96,7 @@ class _CaseCreationScreenState extends State<CaseCreationScreen> {
     final roster = _expectedRoster();
     return 'The case starts the moment ${roster.total} players have joined; '
         '${roster.mafia} of them are drawn as mafia at random. Recruitment '
-        'unlocks once mafia thin out to about this same starting split.';
+        'unlocks once mafia thin out to about this same starting ratio.';
   }
 
   Future<void> _create() async {
