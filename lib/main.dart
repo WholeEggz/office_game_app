@@ -59,24 +59,37 @@ class _OfficeGameAppState extends State<OfficeGameApp> {
   @override
   Widget build(BuildContext context) {
     final backend = _backend;
-    return MaterialApp(
-      title: 'Office Game',
-      debugShowCheckedModeBanner: false,
-      theme: buildOfficeGameTheme(),
-      home: backend == null
-          ? BackendSelectionScreen(onSelect: (selected) => setState(() => _backend = selected))
-          : MultiProvider(
-              providers: backend == AppBackend.firebase
-                  ? [
-                      Provider<GameRepository>(create: (_) => FirebaseGameRepository()),
-                      Provider<AuthService>(create: (_) => FirebaseAuthService()),
-                    ]
-                  : [
-                      Provider<GameRepository>(create: (_) => LocalGameRepository()),
-                      Provider<AuthService>(create: (_) => LocalAuthService()),
-                    ],
-              child: const EntryScreen(),
-            ),
+    // MultiProvider must wrap MaterialApp itself, not just sit inside
+    // `home:` — MaterialApp owns the Navigator, and a route pushed via
+    // Navigator.push (EntryScreen -> RoleSwitcherScreen, for instance) is
+    // a sibling in that Navigator's route stack, not a descendant of
+    // whatever `home:` rendered. A provider nested inside `home:` is
+    // invisible to every route pushed after it; it has to be an ancestor
+    // of the Navigator to reach all of them.
+    if (backend == null) {
+      return MaterialApp(
+        title: 'Office Game',
+        debugShowCheckedModeBanner: false,
+        theme: buildOfficeGameTheme(),
+        home: BackendSelectionScreen(onSelect: (selected) => setState(() => _backend = selected)),
+      );
+    }
+    return MultiProvider(
+      providers: backend == AppBackend.firebase
+          ? [
+              Provider<GameRepository>(create: (_) => FirebaseGameRepository()),
+              Provider<AuthService>(create: (_) => FirebaseAuthService()),
+            ]
+          : [
+              Provider<GameRepository>(create: (_) => LocalGameRepository()),
+              Provider<AuthService>(create: (_) => LocalAuthService()),
+            ],
+      child: MaterialApp(
+        title: 'Office Game',
+        debugShowCheckedModeBanner: false,
+        theme: buildOfficeGameTheme(),
+        home: const EntryScreen(),
+      ),
     );
   }
 }
