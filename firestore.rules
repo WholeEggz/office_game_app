@@ -1,12 +1,93 @@
 rules_version = '2';
 
-// Deny-all placeholder. The real redaction-aware rules (true-doc /
-// publicPlayers mirror / cellViews split) land in Phase 1b Milestone 3 —
-// see implementation_plan.md's "highest-risk technical piece" section.
+// The redaction architecture from implementation_plan.md's "highest-risk
+// technical piece" section: Firestore rules are a binary allow/deny on a
+// whole document, not a per-viewer field transform, so LocalGameRepository's
+// per-viewer role redaction (_publicView/_visiblePlayers) is reproduced as
+// three separate collections instead of one:
+//   - players/{playerId}      the true doc — self-only, Cloud Functions write
+//   - publicPlayers/{playerId} a redacted mirror kept in sync by a trigger
+//   - cellViews/{viewerId}     the viewer's own cell-link role reveals
+//
+// All writes everywhere below are Cloud-Functions-only: the Admin SDK
+// bypasses these rules entirely, so `allow write: if false` blocks direct
+// client writes without blocking the functions that actually mutate state.
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if false;
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(playerId) {
+      return isSignedIn() && request.auth.uid == playerId;
+    }
+
+    function isMember(gameId) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/games/$(gameId)/players/$(request.auth.uid));
+    }
+
+    function isCurrentMafia(gameId) {
+      let doc = get(/databases/$(database)/documents/games/$(gameId)/players/$(request.auth.uid));
+      return isSignedIn() && doc.data.role == 'mafia' && doc.data.wasUnmasked == false;
+    }
+
+    match /games/{gameId} {
+      // Browsable by any signed-in user, even before joining — the doc's
+      // own fields are already public-by-design (concept doc §6: the
+      // elimination/recruitment method/sign forewarnings are method-only,
+      // never-the-target), so no redaction is needed here.
+      allow read: if isSignedIn();
+      allow write: if false;
+
+      match /players/{playerId} {
+        allow read: if isSelf(playerId);
+        allow write: if false;
+      }
+
+      match /publicPlayers/{playerId} {
+        // Deliberately not membership-gated, unlike the other subcollections
+        // below: CaseDetailsScreen shows a game's roster before joining
+        // (PlayerEntryScreen -> "find your case" -> case details), and this
+        // is safe to leave open because it's already the redacted view —
+        // role forced to villager and vote weight forced to the starting
+        // value unless the player was actually unmasked. No membership
+        // check is needed to protect something that's already public.
+        allow read: if isSignedIn();
+        allow write: if false;
+      }
+
+      match /cellViews/{viewerId} {
+        // Genuinely sensitive — reveals real roles behind a viewer's own
+        // cell-structure links (design pillar #4) — so unlike publicPlayers
+        // this is strictly self-only.
+        allow read: if isSelf(viewerId);
+        allow write: if false;
+      }
+
+      match /mafiaThread/{entryId} {
+        // A binary gate a rule *can* express directly, unlike per-viewer
+        // redaction: mafia or not, checked against the requester's own true
+        // player doc. An unmasked member loses this the instant they flip.
+        allow read: if isCurrentMafia(gameId);
+        allow write: if false;
+      }
+
+      match /votes/{voteId} {
+        // Not secret per the concept doc — voting history is permanent and
+        // visible to everyone in the game — just member-gated, not redacted.
+        allow read: if isMember(gameId);
+        allow write: if false;
+      }
+
+      match /observations/{observationId} {
+        // Ephemeral (purged after 3 rounds by a scheduled function, not
+        // just filtered on read) but not role-gated — same member-only
+        // treatment as votes.
+        allow read: if isMember(gameId);
+        allow write: if false;
+      }
     }
   }
 }
