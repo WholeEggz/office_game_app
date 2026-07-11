@@ -13,6 +13,7 @@ import '../../domain/repositories/game_repository.dart';
 import '../common/dossier_card.dart';
 import '../game/game_screen.dart';
 import '../help/help_screen.dart';
+import '../stats/track_record_screen.dart';
 import 'case_creation_screen.dart';
 
 /// The real player's path: register once, then find and join a game from
@@ -76,6 +77,13 @@ class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
       appBar: AppBar(
         title: const Text('Join a case'),
         actions: [
+          if (_user case final user?)
+            IconButton(
+              icon: Icon(PhosphorIconsLight.chartBar, color: AppColors.textSecondary),
+              tooltip: 'Track record',
+              onPressed: () =>
+                  openTrackRecord(context, viewerId: user.id, viewerName: user.displayName),
+            ),
           IconButton(
             icon: Icon(PhosphorIconsLight.bookOpenText, color: AppColors.textSecondary),
             tooltip: 'How to play',

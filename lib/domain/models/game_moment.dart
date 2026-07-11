@@ -24,6 +24,12 @@ enum GameMomentType {
   /// against *them*, eroding their weight the same way a mafia hit would.
   targetedByVillagers,
 
+  /// This round resolved and this player was mafia, not yet unmasked, and
+  /// not the player caught this round — the "good outcome" that feeds the
+  /// track record's survived-as-mafia count and its unified streak
+  /// (mirrors [correctVoteReward] as the villager-side "good round").
+  survivedRoundAsMafia,
+
   /// Successfully executed a recruitment — the target accepted.
   recruitmentExecuted,
 
