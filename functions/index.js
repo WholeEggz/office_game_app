@@ -7,7 +7,12 @@ const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { STARTING_VOTE_WEIGHT, requireString, requirePositiveInt, requireAuth, shuffle } =
   require("./lib/shared");
 
+// Must run before requiring ./lib/roundResolution — that module calls
+// getFirestore() at its own top level, which throws "no app" if the
+// default app isn't initialized yet.
 initializeApp();
+
+const { computeNextCutoffAt } = require("./lib/roundResolution");
 
 const db = getFirestore();
 
@@ -17,6 +22,7 @@ function newPlayerDoc(name) {
     role: "villager",
     voteWeight: STARTING_VOTE_WEIGHT,
     isActive: true,
+    inactiveUntil: null,
     recruiterId: null,
     recruitedPlayerIds: [],
     wasUnmasked: false,
@@ -49,7 +55,10 @@ async function maybeActivateGame(gameRef) {
       batch.update(doc.ref, { role: "mafia" });
     }
   }
-  batch.update(gameRef, { status: "active" });
+  // Starts the daily-cutoff clock (Milestone 5's scheduled sweep) the
+  // same moment LocalGameRepository._activateGame calls
+  // _scheduleDailyCutoff — right when the game actually goes active.
+  batch.update(gameRef, { status: "active", nextCutoffAt: computeNextCutoffAt(game.dailyCutoffSeconds) });
   await batch.commit();
 }
 
@@ -283,3 +292,13 @@ exports.debugMintTestUser = onCall(async (request) => {
 // logObservation. See implementation_plan.md's "Cloud Functions
 // inventory" section.
 Object.assign(exports, require("./lib/gameplay"));
+
+// Milestone 5: scheduled functions — daily vote cutoff, mafia-inactive
+// auto-reactivation. Named explicitly rather than Object.assign'd like
+// gameplay.js above: functions/lib/scheduled.js also exports the plain,
+// directly-testable sweep functions underneath these two, which aren't
+// themselves deployable Cloud Functions and shouldn't end up in this
+// module's exports.
+const scheduled = require("./lib/scheduled");
+exports.scheduledDailyCutoffSweep = scheduled.scheduledDailyCutoffSweep;
+exports.scheduledMafiaReactivationSweep = scheduled.scheduledMafiaReactivationSweep;

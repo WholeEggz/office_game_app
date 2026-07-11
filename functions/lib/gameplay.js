@@ -6,259 +6,35 @@
 // modified client could otherwise cheat (decrement another player's
 // weight, read the mafia roster early, fabricate a role draw).
 //
-// Deliberately NOT included here, per implementation_plan.md's explicit
-// Milestone 4/5 split: the 1-hour execution-window auto-lapse, the 24h
-// mafia-inactive auto-reactivation, and the daily-cutoff auto-resolve are
-// all `dart:async Timer`s in LocalGameRepository that only fire while that
+// The 1-hour execution-window auto-lapse, the 24h mafia-inactive
+// auto-reactivation, and the daily-cutoff auto-resolve are all
+// `dart:async Timer`s in LocalGameRepository that only fire while that
 // process is alive — a real deployment needs Cloud Scheduler / scheduled
-// functions instead (Milestone 5). What *is* included here is the
-// synchronous, call-time equivalent of each: executeElimination/
-// executeRecruitment still reject a call after the window has practically
-// closed, and round resolution still lapses anything agreed-but-unexecuted
-// when the round ends — proposals just won't proactively flip to `lapsed`
-// on their own between calls yet.
+// functions instead. This file has the call-time equivalent of each
+// (executeElimination/executeRecruitment reject a call after the window
+// has practically closed; round resolution lapses anything
+// agreed-but-unexecuted when the round ends); setMemberActive below
+// stamps `inactiveUntil` so a *scheduled* sweep can proactively flip
+// someone back to active between calls — see functions/lib/scheduled.js
+// (Milestone 5) for that sweep and the matching one for the daily cutoff.
 
-const { getFirestore, FieldValue } = require("firebase-admin/firestore");
+const { FieldValue, Timestamp } = require("firebase-admin/firestore");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { requireString, requireAuth } = require("./shared");
+const {
+  db,
+  requireGameNotEndedData,
+  assertCurrentMafia,
+  newMomentWrite,
+  maybeMarkAgreedInTx,
+  checkGameEndInTx,
+  resolveRoundTransactional,
+} = require("./roundResolution");
 
-const db = getFirestore();
-
-function requireGameNotEndedData(gameData) {
-  if (gameData.status === "ended") {
-    throw new HttpsError("failed-precondition", "This case is closed");
-  }
-}
-
-function assertCurrentMafia(playerData, playerId) {
-  if (!playerData || playerData.role !== "mafia" || playerData.wasUnmasked || playerData.hasLeft) {
-    throw new HttpsError("failed-precondition", `${playerId} is not a current mafia member`);
-  }
-}
-
-// players: array of { id, role, isActive, hasLeft, ... } — a plain-object
-// projection of the players collection, not a QuerySnapshot, so callers
-// can pass either a fresh read or one patched with an in-flight change
-// (e.g. leaveGame's own hasLeft flip) before this runs.
-function activeMafiaIds(players) {
-  const ids = new Set();
-  for (const p of players) {
-    if (p.role === "mafia" && p.isActive !== false && !p.hasLeft) ids.add(p.id);
-  }
-  return ids;
-}
-
-function newMomentWrite(gameRef, playerId, type, round) {
-  return {
-    ref: gameRef.collection("moments").doc(),
-    data: {
-      playerId,
-      type,
-      round,
-      createdAt: FieldValue.serverTimestamp(),
-      acknowledged: false,
-    },
-  };
-}
-
-// Mirrors LocalGameRepository._maybeMarkAgreed: marks [entryRef] agreed the
-// moment every currently-active mafia member has accepted it, and puts the
-// method/sign (never the target) in front of every villager as a
-// forewarning. No vote weight moves and no offer reaches its target yet —
-// that's execution, a separate call.
-function maybeMarkAgreedInTx(tx, gameRef, entryRef, entry, players) {
-  if (entry.agreedAt != null || entry.executedAt != null || entry.lapsed) return false;
-  const required = activeMafiaIds(players);
-  const accepted = new Set(entry.acceptedByPlayerIds || []);
-  if (required.size === 0) return false;
-  for (const id of required) {
-    if (!accepted.has(id)) return false;
-  }
-  tx.update(entryRef, { agreedAt: FieldValue.serverTimestamp() });
-  if (entry.type === "proposal") {
-    tx.update(gameRef, {
-      eliminationMethodDescription: entry.proposedMethod,
-      eliminationSignalExecuted: false,
-      eliminationSignalConfirmed: false,
-    });
-  } else {
-    tx.update(gameRef, {
-      recruitmentSignDescription: entry.proposedMethod,
-      recruitmentSignExecuted: false,
-      recruitmentSignConfirmed: false,
-    });
-  }
-  return true;
-}
-
-// Mirrors LocalGameRepository._checkForGameEnd. Only meaningful to call
-// against an `active` game — callers gate on that themselves, since this
-// runs mid-transaction after other reads/writes are already in flight.
-function checkGameEndInTx(tx, gameRef, players, round) {
-  const livingMafia = players.filter((p) => p.role === "mafia" && !p.hasLeft).length;
-  const livingVillagers = players.filter((p) => p.role === "villager" && !p.hasLeft).length;
-  let winner = null;
-  if (livingMafia === 0) winner = "villagers";
-  else if (livingMafia >= livingVillagers) winner = "mafia";
-  if (!winner) return false;
-
-  tx.update(gameRef, { status: "ended", winner });
-  for (const p of players) {
-    const everMafia = p.role === "mafia" || p.wasUnmasked;
-    const onWinningSide = winner === "mafia" ? everMafia : !everMafia;
-    const moment = newMomentWrite(gameRef, p.id, onWinningSide ? "finaleWin" : "finaleLoss", round);
-    tx.set(moment.ref, moment.data);
-  }
-  return true;
-}
-
-// Mirrors LocalGameRepository._resolveRound: tallies the current round's
-// votes by each voter's *live* weight (not the snapshot on the Vote
-// record), applies the unmask+reward or weight-erosion outcome, records
-// every player's per-round moment, purges observations older than 3
-// rounds, lapses anything agreed-but-unexecuted this round, and advances
-// to the next round. Shared by resolveVotesForDay,
-// acknowledgeEliminationSignal, and respondToRecruitment — all three
-// resolve the day the same way, just triggered differently.
-async function resolveRoundTransactional(tx, gameRef) {
-  const gameSnap = await tx.get(gameRef);
-  const game = gameSnap.data();
-  const currentRound = game.currentRound;
-
-  const playersSnap = await tx.get(gameRef.collection("players"));
-  const players = new Map(playersSnap.docs.map((d) => [d.id, { id: d.id, ...d.data() }]));
-
-  const votesSnap = await tx.get(gameRef.collection("votes").where("round", "==", currentRound));
-  const roundVotes = votesSnap.docs.map((d) => d.data());
-
-  const threadSnap = await tx.get(gameRef.collection("mafiaThread"));
-  const obsSnap = await tx.get(gameRef.collection("observations"));
-
-  const tally = {};
-  for (const vote of roundVotes) {
-    const liveWeight = (players.get(vote.voterId) || {}).voteWeight || 0;
-    tally[vote.targetPlayerId] = (tally[vote.targetPlayerId] || 0) + liveWeight;
-  }
-  let winnerId = null;
-  let bestWeight = 0;
-  for (const [targetId, weight] of Object.entries(tally)) {
-    if (weight > bestWeight) {
-      bestWeight = weight;
-      winnerId = targetId;
-    }
-  }
-
-  const notifiedThisRound = new Set();
-  const playerPatches = new Map();
-  function patchPlayer(id, patch) {
-    playerPatches.set(id, { ...(playerPatches.get(id) || {}), ...patch });
-  }
-  const momentWrites = [];
-  function addMoment(playerId, type, countsAsRoundActivity = true) {
-    momentWrites.push({ playerId, type });
-    if (countsAsRoundActivity) notifiedThisRound.add(playerId);
-  }
-
-  if (winnerId && bestWeight > 0) {
-    const target = players.get(winnerId);
-    if (target.role === "mafia" && !target.wasUnmasked) {
-      // Correctly caught a mafia member: unmask them and reward every
-      // voter who picked them.
-      const rewardedVoterIds = new Set(
-        roundVotes.filter((v) => v.targetPlayerId === winnerId).map((v) => v.voterId)
-      );
-      patchPlayer(winnerId, { role: "villager", wasUnmasked: true });
-      for (const voterId of rewardedVoterIds) {
-        const voter = players.get(voterId);
-        if (voter) patchPlayer(voterId, { voteWeight: (voter.voteWeight || 0) + 1 });
-        addMoment(voterId, "correctVoteReward");
-      }
-      // Everyone else still finds out an Informant was caught, just
-      // without personal credit — the target themselves is covered by
-      // the unmask ceremony instead, not a moment.
-      for (const id of players.keys()) {
-        if (id === winnerId || rewardedVoterIds.has(id)) continue;
-        addMoment(id, "mafiaUnmaskedByOthers");
-      }
-    } else {
-      // Voted for a villager instead: the vote still lands, it just
-      // erodes their weight the same way a mafia hit would.
-      patchPlayer(winnerId, { voteWeight: Math.max(0, (target.voteWeight || 0) - 1) });
-      addMoment(winnerId, "targetedByVillagers");
-    }
-  }
-
-  // Every mafia member who made it through this round without being the
-  // one caught. `id === winnerId` excluded explicitly: when the winning
-  // target *was* mafia, they're deliberately left out of
-  // `notifiedThisRound` above, so without this check they'd still read as
-  // mafia/not-unmasked here and wrongly get credited with surviving the
-  // very round they were caught in.
-  for (const [id, p] of players) {
-    if (notifiedThisRound.has(id) || id === winnerId) continue;
-    if (p.role === "mafia" && !p.wasUnmasked && !p.hasLeft) {
-      addMoment(id, "survivedRoundAsMafia");
-    }
-  }
-
-  // The generic fallback: everyone still in the game who didn't already
-  // get something more specific this round.
-  for (const id of players.keys()) {
-    if (!notifiedThisRound.has(id)) {
-      addMoment(id, "roundEnded");
-    }
-  }
-
-  const nextRound = currentRound + 1;
-
-  const staleObsRefs = obsSnap.docs
-    .filter((d) => nextRound - d.data().round >= 3)
-    .map((d) => d.ref);
-
-  // The round ending is the other half of the execution deadline (1 hour,
-  // or the round ending — whichever is first): any proposal or
-  // recruitment agreed but never executed this round lapses now.
-  const lapseRefs = threadSnap.docs
-    .filter((d) => {
-      const e = d.data();
-      return (
-        e.round === currentRound &&
-        (e.type === "proposal" || e.type === "recruitment") &&
-        e.agreedAt != null &&
-        e.executedAt == null &&
-        !e.lapsed
-      );
-    })
-    .map((d) => d.ref);
-
-  // --- writes (all reads above are complete) ---
-  for (const [id, patch] of playerPatches) {
-    tx.update(gameRef.collection("players").doc(id), patch);
-  }
-  for (const m of momentWrites) {
-    const moment = newMomentWrite(gameRef, m.playerId, m.type, currentRound);
-    tx.set(moment.ref, moment.data);
-  }
-  for (const ref of staleObsRefs) tx.delete(ref);
-  for (const ref of lapseRefs) tx.update(ref, { lapsed: true });
-
-  tx.update(gameRef, {
-    currentRound: nextRound,
-    // A fresh round starts with no lingering signal from the last one.
-    eliminationMethodDescription: null,
-    eliminationSignalExecuted: false,
-    eliminationSignalConfirmed: false,
-    recruitmentSignDescription: null,
-    recruitmentSignExecuted: false,
-    recruitmentSignConfirmed: false,
-  });
-
-  const finalPlayers = [...players.values()].map((p) => ({
-    ...p,
-    ...(playerPatches.get(p.id) || {}),
-  }));
-  checkGameEndInTx(tx, gameRef, finalPlayers, nextRound);
-}
+// Concept doc §7: a mafia member marked inactive (sick leave, vacation) is
+// absent "for 24 hours / until end of day" — mirrors LocalGameRepository's
+// `_inactivityAutoResetWindow`.
+const INACTIVITY_AUTO_RESET_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 exports.castVote = onCall(async (request) => {
   requireAuth(request);
@@ -863,7 +639,13 @@ exports.setMemberActive = onCall(async (request) => {
       d.id === playerId ? { id: d.id, ...d.data(), isActive } : { id: d.id, ...d.data() }
     );
 
-    tx.update(playerRef, { isActive });
+    // Marking someone inactive stamps a 24h deadline the scheduled
+    // reactivation sweep (functions/lib/scheduled.js) watches for;
+    // reactivating (manually or via that sweep) clears it.
+    const inactiveUntil = isActive
+      ? null
+      : Timestamp.fromMillis(Date.now() + INACTIVITY_AUTO_RESET_WINDOW_MS);
+    tx.update(playerRef, { isActive, inactiveUntil });
 
     // Marking someone inactive can immediately satisfy an unagreed
     // proposal or recruitment that was only waiting on them.
