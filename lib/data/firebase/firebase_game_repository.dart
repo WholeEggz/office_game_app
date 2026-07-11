@@ -28,15 +28,20 @@ const _startingVoteWeight = 3;
 /// reads/writes rather than a Cloud Function (see firestore.rules'
 /// `moments` comment).
 ///
-/// Still missing, deliberately deferred to Milestone 5: the 1-hour
-/// execution-window auto-lapse, the 24h mafia-inactive auto-reactivation,
-/// and the daily-cutoff auto-resolve are all `dart:async Timer`s in
-/// `LocalGameRepository` that only fire while that process is alive — a
-/// real deployment needs Cloud Scheduler / scheduled functions instead.
-/// `watchGame` (the debug role switcher's full unredacted roster) also
-/// stays unimplemented — no client can safely read every player's true
-/// doc under this architecture, debug-only or not; that needs its own
-/// answer, not attempted here.
+/// Milestone 5 added the scheduled equivalents of `LocalGameRepository`'s
+/// `dart:async Timer`s (execution-window lapse, mafia-inactive
+/// reactivation, daily cutoff) — see `functions/lib/scheduled.js`.
+///
+/// `watchGame`/`startGame` (Milestone 6): `watchGame` is used by two very
+/// different callers with the same method — `GameScreen` (shared by every
+/// player) only reads game-level fields off it and sources the roster
+/// separately via [watchVisiblePlayers], while the debug role switcher's
+/// own roster view genuinely wants every player's real role. No client can
+/// safely read every player's true doc under this architecture, so that
+/// second need is served by `debugRoster`, a mirror the
+/// `syncPlayerViews` trigger only ever writes when running against the
+/// emulator (see firestore.rules' `debugRoster` comment) — empty, and
+/// therefore harmless, in a real deployment.
 class FirebaseGameRepository implements GameRepository {
   FirebaseGameRepository({FirebaseFirestore? firestore, FirebaseFunctions? functions})
       : _db = firestore ?? FirebaseFirestore.instance,
@@ -130,10 +135,53 @@ class FirebaseGameRepository implements GameRepository {
   }
 
   @override
-  Future<void> startGame(String gameId) => throw UnimplementedError();
+  Future<void> startGame(String gameId) async {
+    await _call('startGame', {'gameId': gameId});
+  }
 
+  /// Composes the game doc (always safe — see [_gameFromData]'s callers)
+  /// with `debugRoster` (real roles, emulator-only — see the class doc and
+  /// firestore.rules' `debugRoster` comment) into a live [Game].
+  /// `GameScreen` only reads game-level fields off this stream and sources
+  /// the roster separately via [watchVisiblePlayers], so `debugRoster`
+  /// being empty in a real deployment doesn't affect it — only the debug
+  /// role switcher's own roster view depends on it being populated.
   @override
-  Stream<Game> watchGame(String gameId) => throw UnimplementedError();
+  Stream<Game> watchGame(String gameId) {
+    final gameRef = _games.doc(gameId);
+    final controller = StreamController<Game>.broadcast();
+
+    DocumentSnapshot<Map<String, dynamic>>? gameSnap;
+    QuerySnapshot<Map<String, dynamic>>? debugRosterSnap;
+
+    void emit() {
+      final snap = gameSnap;
+      final data = snap?.data();
+      if (snap == null || !snap.exists || data == null) return;
+      final players = (debugRosterSnap?.docs ?? const [])
+          .map((doc) => _playerFromDebugRosterDoc(doc.id, doc.data()))
+          .toList();
+      controller.add(_gameFromData(gameId, data, players: players));
+    }
+
+    final subs = <StreamSubscription>[
+      gameRef.snapshots().listen((snap) {
+        gameSnap = snap;
+        emit();
+      }, onError: controller.addError),
+      gameRef.collection('debugRoster').snapshots().listen((snap) {
+        debugRosterSnap = snap;
+        emit();
+      }, onError: controller.addError),
+    ];
+
+    controller.onCancel = () async {
+      for (final sub in subs) {
+        await sub.cancel();
+      }
+    };
+    return controller.stream;
+  }
 
   @override
   Stream<List<Game>> watchGames({required String viewerId}) {
@@ -149,7 +197,7 @@ class FirebaseGameRepository implements GameRepository {
       for (final doc in snapshot.docs) {
         seenIds.add(doc.id);
         final existingPlayers = gamesById[doc.id]?.players ?? const <Player>[];
-        gamesById[doc.id] = _gameFromDoc(doc, players: existingPlayers);
+        gamesById[doc.id] = _gameFromData(doc.id, doc.data(), players: existingPlayers);
         playerSubs.putIfAbsent(doc.id, () {
           return watchVisiblePlayers(gameId: doc.id, viewerId: viewerId).listen((players) {
             final current = gamesById[doc.id];
@@ -231,10 +279,9 @@ class FirebaseGameRepository implements GameRepository {
     return controller.stream;
   }
 
-  Game _gameFromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc, {required List<Player> players}) {
-    final data = doc.data();
+  Game _gameFromData(String id, Map<String, dynamic> data, {required List<Player> players}) {
     return Game(
-      id: doc.id,
+      id: id,
       locationTag: data['locationTag'] as String? ?? '',
       status: GameStatus.values.byName(data['status'] as String? ?? 'recruiting'),
       minPlayers: (data['minPlayers'] as num?)?.toInt() ?? 1,
@@ -288,6 +335,22 @@ class FirebaseGameRepository implements GameRepository {
       role: PlayerRole.values.byName(roleOverride ?? safeData['role'] as String? ?? 'villager'),
       voteWeight: _startingVoteWeight,
       isActive: safeData['isActive'] as bool? ?? true,
+      wasUnmasked: safeData['wasUnmasked'] as bool? ?? false,
+      hasLeft: safeData['hasLeft'] as bool? ?? false,
+      joinedAt: (safeData['joinedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+    );
+  }
+
+  /// The debug role switcher's roster entry — real role, unlike
+  /// [_playerFromPublicDoc]. Only ever populated by `debugRoster` (see
+  /// this class's doc comment), so [data] is empty for anyone this wasn't
+  /// written for, i.e. always in a real deployment.
+  Player _playerFromDebugRosterDoc(String id, Map<String, dynamic>? data) {
+    final safeData = data ?? const <String, dynamic>{};
+    return Player(
+      id: id,
+      name: safeData['name'] as String? ?? '',
+      role: PlayerRole.values.byName(safeData['role'] as String? ?? 'villager'),
       wasUnmasked: safeData['wasUnmasked'] as bool? ?? false,
       hasLeft: safeData['hasLeft'] as bool? ?? false,
       joinedAt: (safeData['joinedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),

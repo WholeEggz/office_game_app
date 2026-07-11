@@ -90,6 +90,11 @@ async function main() {
       hasLeft: false,
     });
     await db.collection(`games/${GAME_ID}/cellViews`).doc("mafiaB").set({ knownRoles: {} });
+    await db.collection(`games/${GAME_ID}/debugRoster`).doc("mafiaB").set({
+      name: "Bob",
+      role: "mafia",
+      wasUnmasked: false,
+    });
     await db.collection(`games/${GAME_ID}/mafiaThread`).doc("entry1").set({ text: "coordinate here" });
     await db.collection(`games/${GAME_ID}/votes`).doc("vote1").set({ voterId: "villagerA" });
     await db.collection(`games/${GAME_ID}/observations`).doc("obs1").set({ text: "saw something" });
@@ -138,6 +143,19 @@ async function main() {
   );
   await check("villager reads someone else's cellViews: DENIED", () =>
     assertFails(villagerA.doc(`games/${GAME_ID}/cellViews/mafiaB`).get())
+  );
+
+  // --- debugRoster: member-gated read (real safety is the write-side
+  // emulator gate in functions/index.js — this collection is empty in a
+  // real deployment regardless of who can technically query it) ---
+  await check("member reads debugRoster: allowed", () =>
+    assertSucceeds(villagerA.doc(`games/${GAME_ID}/debugRoster/mafiaB`).get())
+  );
+  await check("non-member reads debugRoster: DENIED", () =>
+    assertFails(outsider.doc(`games/${GAME_ID}/debugRoster/mafiaB`).get())
+  );
+  await check("client cannot write debugRoster directly: DENIED", () =>
+    assertFails(mafiaB.doc(`games/${GAME_ID}/debugRoster/mafiaB`).update({ role: "villager" }))
   );
 
   // --- mafiaThread: current (not-yet-unmasked) mafia only ---
@@ -228,6 +246,7 @@ async function main() {
       `games/${GAME_ID}/publicPlayers/villagerA`,
       `games/${GAME_ID}/publicPlayers/mafiaB`,
       `games/${GAME_ID}/cellViews/mafiaB`,
+      `games/${GAME_ID}/debugRoster/mafiaB`,
       `games/${GAME_ID}/mafiaThread/entry1`,
       `games/${GAME_ID}/votes/vote1`,
       `games/${GAME_ID}/observations/obs1`,

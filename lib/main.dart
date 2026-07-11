@@ -7,18 +7,24 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'data/firebase/firebase_auth_service.dart';
+import 'data/firebase/firebase_game_repository.dart';
+import 'data/local/local_auth_service.dart';
 import 'data/local/local_game_repository.dart';
 import 'design/theme.dart';
 import 'domain/repositories/auth_service.dart';
 import 'domain/repositories/game_repository.dart';
 import 'firebase_options.dart';
+import 'ui/entry/backend_selection_screen.dart';
 import 'ui/entry/entry_screen.dart';
 
-/// Firebase backend integration is being built behind the local
-/// implementation (see implementation_plan.md, Phase 1b). Milestone 2's
-/// auth vertical slice swaps AuthService to Firebase first;
-/// LocalGameRepository still drives game data until the Milestone 3
-/// redaction architecture and Milestone 4 Cloud Functions land.
+/// Firebase backend integration (implementation_plan.md, Phase 1b) is
+/// complete as of Milestone 6 — FirebaseGameRepository/FirebaseAuthService
+/// implement the full GameRepository/AuthService contract, the same one
+/// LocalGameRepository/LocalAuthService implement. Which pair actually
+/// backs a given app session is chosen at runtime by
+/// BackendSelectionScreen rather than fixed here, so Local (zero backend,
+/// fastest for iterating on a new game-logic change) and Firebase (the
+/// real target) can both be exercised from the same build.
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
@@ -40,22 +46,37 @@ void _useFirebaseEmulators() {
   FirebaseFunctions.instance.useFunctionsEmulator(host, 5001);
 }
 
-class OfficeGameApp extends StatelessWidget {
+class OfficeGameApp extends StatefulWidget {
   const OfficeGameApp({super.key});
 
   @override
+  State<OfficeGameApp> createState() => _OfficeGameAppState();
+}
+
+class _OfficeGameAppState extends State<OfficeGameApp> {
+  AppBackend? _backend;
+
+  @override
   Widget build(BuildContext context) {
-    return MultiProvider(
-      providers: [
-        Provider<GameRepository>(create: (_) => LocalGameRepository()),
-        Provider<AuthService>(create: (_) => FirebaseAuthService()),
-      ],
-      child: MaterialApp(
-        title: 'Office Game',
-        debugShowCheckedModeBanner: false,
-        theme: buildOfficeGameTheme(),
-        home: const EntryScreen(),
-      ),
+    final backend = _backend;
+    return MaterialApp(
+      title: 'Office Game',
+      debugShowCheckedModeBanner: false,
+      theme: buildOfficeGameTheme(),
+      home: backend == null
+          ? BackendSelectionScreen(onSelect: (selected) => setState(() => _backend = selected))
+          : MultiProvider(
+              providers: backend == AppBackend.firebase
+                  ? [
+                      Provider<GameRepository>(create: (_) => FirebaseGameRepository()),
+                      Provider<AuthService>(create: (_) => FirebaseAuthService()),
+                    ]
+                  : [
+                      Provider<GameRepository>(create: (_) => LocalGameRepository()),
+                      Provider<AuthService>(create: (_) => LocalAuthService()),
+                    ],
+              child: const EntryScreen(),
+            ),
     );
   }
 }

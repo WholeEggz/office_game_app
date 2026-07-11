@@ -165,6 +165,35 @@ exports.addPlayer = onCall(async (request) => {
   return { playerId };
 });
 
+// Debug role switcher only — createGame/addPlayer already auto-start via
+// maybeActivateGame the instant the roster hits minPlayers, so no real
+// player flow ever needs this. Mirrors LocalGameRepository.startGame:
+// idempotent no-op if the game already left `recruiting`, a clear error
+// if the roster's still short, otherwise the exact same activation logic
+// as the automatic path.
+exports.startGame = onCall(async (request) => {
+  requireAuth(request);
+  const data = request.data || {};
+  const gameId = requireString(data.gameId, "gameId");
+  const gameRef = db.collection("games").doc(gameId);
+
+  const gameSnap = await gameRef.get();
+  if (!gameSnap.exists) throw new HttpsError("not-found", `Game ${gameId} not found`);
+  const game = gameSnap.data();
+  if (game.status !== "recruiting") return {};
+
+  const playersSnap = await gameRef.collection("players").get();
+  if (playersSnap.size < game.minPlayers) {
+    throw new HttpsError(
+      "failed-precondition",
+      `Need at least ${game.minPlayers} players to start (have ${playersSnap.size})`
+    );
+  }
+
+  await maybeActivateGame(gameRef);
+  return {};
+});
+
 // Reproduces LocalGameRepository._publicView/_visiblePlayers server-side,
 // run once per write instead of once per read (implementation_plan.md's
 // redaction architecture). Maintains two documents per true player-doc
@@ -177,17 +206,22 @@ exports.addPlayer = onCall(async (request) => {
 //     here can make their cellViews stale too (e.g. a recruiter getting
 //     unmasked later needs their recruit's cellViews refreshed, not just
 //     their own).
+//   - debugRoster/{playerId}: real name/role/wasUnmasked, emulator-only —
+//     see the comment on that write below for why this is safe to leave
+//     member-readable in firestore.rules.
 exports.syncPlayerViews = onDocumentWritten("games/{gameId}/players/{playerId}", async (event) => {
   const { gameId, playerId } = event.params;
   const gameRef = db.collection("games").doc(gameId);
   const publicRef = gameRef.collection("publicPlayers").doc(playerId);
   const cellViewRef = gameRef.collection("cellViews").doc(playerId);
+  const debugRosterRef = gameRef.collection("debugRoster").doc(playerId);
 
   const after = event.data && event.data.after;
   if (!after || !after.exists) {
     await Promise.all([
       publicRef.delete().catch(() => {}),
       cellViewRef.delete().catch(() => {}),
+      debugRosterRef.delete().catch(() => {}),
     ]);
     return;
   }
@@ -204,6 +238,27 @@ exports.syncPlayerViews = onDocumentWritten("games/{gameId}/players/{playerId}",
     hasLeft: player.hasLeft,
     joinedAt: player.joinedAt,
   });
+
+  // The debug role switcher's full-roster view (real roles, "never shown
+  // to a real player like this") has no safe general answer under this
+  // redaction architecture — no client can read every player's true doc.
+  // This write is the one deliberate exception, and it's gated the same
+  // way debugMintTestUser is gated: only fires when FUNCTIONS_EMULATOR is
+  // set, i.e. never in a real deployment. That's *why*
+  // firestore.rules can leave the read side member-gated rather than
+  // locked down further — in production this collection is simply never
+  // populated, so there's nothing in it to leak regardless of who can
+  // technically query it. Safety here depends on this write staying
+  // emulator-gated; don't reuse this collection for anything else.
+  if (process.env.FUNCTIONS_EMULATOR === "true") {
+    await debugRosterRef.set({
+      name: player.name,
+      role: player.role,
+      wasUnmasked: player.wasUnmasked,
+      hasLeft: player.hasLeft,
+      joinedAt: player.joinedAt,
+    });
+  }
 
   await recomputeCellView(gameRef, playerId, player);
 
