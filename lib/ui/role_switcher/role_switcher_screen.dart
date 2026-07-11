@@ -59,45 +59,58 @@ class _RoleSwitcherScreenState extends State<RoleSwitcherScreen> {
     if (name.isEmpty) return;
     final auth = context.read<AuthService>();
     final repo = context.read<GameRepository>();
-    final user = await auth.signInWithDisplayName(name);
-    final minPlayers = int.tryParse(_minPlayersController.text.trim()) ?? 8;
-    final game = await repo.createGame(
-      locationTag: _locationController.text.trim().isEmpty
-          ? 'The Office'
-          : _locationController.text.trim(),
-      minPlayers: minPlayers,
-      creatorId: user.id,
-      creatorName: user.displayName,
-    );
-    setState(() => _gameId = game.id);
+    try {
+      final user = await auth.signInWithDisplayName(name);
+      final minPlayers = int.tryParse(_minPlayersController.text.trim()) ?? 8;
+      final game = await repo.createGame(
+        locationTag: _locationController.text.trim().isEmpty
+            ? 'The Office'
+            : _locationController.text.trim(),
+        minPlayers: minPlayers,
+        creatorId: user.id,
+        creatorName: user.displayName,
+      );
+      if (!mounted) return;
+      setState(() => _gameId = game.id);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Could not open the case: $e')));
+    }
   }
 
   Future<void> _quickStart() async {
     final auth = context.read<AuthService>();
     final repo = context.read<GameRepository>();
-    // registerNewPlayer, not signInWithDisplayName: these stock names are
-    // disposable per quick-started game, not "you" resuming an identity —
-    // reusing an id by name match here is exactly what caused "already
-    // joined this game" when the same stock roster got reused elsewhere.
-    final creator = await auth.registerNewPlayer(_quickStartNames.first);
-    final game = await repo.createGame(
-      locationTag: 'Third Floor',
-      minPlayers: _quickStartNames.length,
-      creatorId: creator.id,
-      creatorName: creator.displayName,
-      // Explicit rather than relying on createGame's own conservative
-      // default (1) — 2 mafia members is what actually exercises
-      // multi-member-agreement testing (§4, §3.3) that a single-mafia
-      // game can't.
-      mafiaCount: 2,
-    );
-    for (final name in _quickStartNames.skip(1)) {
-      final user = await auth.registerNewPlayer(name);
-      await repo.addPlayer(gameId: game.id, playerId: user.id, name: user.displayName);
+    try {
+      // registerNewPlayer, not signInWithDisplayName: these stock names are
+      // disposable per quick-started game, not "you" resuming an identity —
+      // reusing an id by name match here is exactly what caused "already
+      // joined this game" when the same stock roster got reused elsewhere.
+      final creator = await auth.registerNewPlayer(_quickStartNames.first);
+      final game = await repo.createGame(
+        locationTag: 'Third Floor',
+        minPlayers: _quickStartNames.length,
+        creatorId: creator.id,
+        creatorName: creator.displayName,
+        // Explicit rather than relying on createGame's own conservative
+        // default (1) — 2 mafia members is what actually exercises
+        // multi-member-agreement testing (§4, §3.3) that a single-mafia
+        // game can't.
+        mafiaCount: 2,
+      );
+      for (final name in _quickStartNames.skip(1)) {
+        final user = await auth.registerNewPlayer(name);
+        await repo.addPlayer(gameId: game.id, playerId: user.id, name: user.displayName);
+      }
+      await repo.startGame(game.id);
+      if (!mounted) return;
+      setState(() => _gameId = game.id);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Could not quick-start: $e')));
     }
-    await repo.startGame(game.id);
-    if (!mounted) return;
-    setState(() => _gameId = game.id);
   }
 
   Future<void> _joinGame(Game game) async {
@@ -105,29 +118,38 @@ class _RoleSwitcherScreenState extends State<RoleSwitcherScreen> {
     if (name.isEmpty) return;
     final auth = context.read<AuthService>();
     final repo = context.read<GameRepository>();
-    // Always a fresh identity — two simulated coworkers can share a first
-    // name, and reusing an existing id here is what used to throw
-    // "already joined this game" when the typed name matched someone
-    // already in it. The repository still rejects a *duplicate name in
-    // this roster* on purpose (see below), just no longer confuses that
-    // with "duplicate identity".
-    final user = await auth.registerNewPlayer(name);
     try {
+      // Always a fresh identity — two simulated coworkers can share a first
+      // name, and reusing an existing id here is what used to throw
+      // "already joined this game" when the typed name matched someone
+      // already in it. The repository still rejects a *duplicate name in
+      // this roster* on purpose (see below), just no longer confuses that
+      // with "duplicate identity".
+      final user = await auth.registerNewPlayer(name);
       await repo.addPlayer(gameId: game.id, playerId: user.id, name: user.displayName);
       _joinNameController.clear();
     } on StateError catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not join: $e')));
     }
   }
 
   Future<void> _enterAs(Player player) async {
     final auth = context.read<AuthService>();
-    await auth.switchToUser(player.id);
-    if (!mounted) return;
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => GameScreen(gameId: _gameId!, playerId: player.id),
-    ));
+    try {
+      await auth.switchToUser(player.id);
+      if (!mounted) return;
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => GameScreen(gameId: _gameId!, playerId: player.id),
+      ));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Could not switch player: $e')));
+    }
   }
 
   @override

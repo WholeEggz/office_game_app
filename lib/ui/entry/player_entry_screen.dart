@@ -40,9 +40,14 @@ class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
     final name = _nameController.text.trim();
     if (name.isEmpty) return;
     final auth = context.read<AuthService>();
-    final user = await auth.signInWithDisplayName(name);
-    if (!mounted) return;
-    setState(() => _user = user);
+    try {
+      final user = await auth.signInWithDisplayName(name);
+      if (!mounted) return;
+      setState(() => _user = user);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not sign in: $e')));
+    }
   }
 
   /// [replace] swaps the current route for `GameScreen` instead of
