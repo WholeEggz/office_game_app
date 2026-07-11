@@ -8,6 +8,8 @@ The concept doc already names the biggest risk: the vote-weight erosion system a
 
 ## Phase 0 — Season Zero (low-tech pilot)
 
+**Status: complete.** Exit criteria below were met; Phase 1a's local prototype and this document's Phase 1b scope both proceed on that basis.
+
 **Goal:** validate the core loop with real people before writing game-logic code.
 
 - Recruit the founding group (the kitchen conversation crowd) — aim for 8–15 players, the minimum needed to make mafia:villager ratios meaningful.
@@ -34,16 +36,17 @@ See `office_game_app/README.md` for setup steps (`flutter create .` to generate 
 
 **Why this phase exists as its own step, not folded into Phase 0 or Phase 1b:** it lets you find rules bugs and UX dead-ends (e.g. "what does a weight-0 villager actually see?") by writing and running real code, without yet paying for Firebase setup, security-rule design, or store accounts. It's also the cheapest way to keep "move fast" honest — you're producing working software from day one, just not networked software yet.
 
-**To do before next phase** (app-itself gaps, not Firebase/deployment — that's already tracked separately):
+**Status:** exit criteria below were met — Phase 1b is now underway (see below). App-itself gaps tracked here, separate from the Firebase/deployment work:
 
 - ~~Game lifecycle: define and implement a win/end condition, lock a finished game against further actions, build the finale ceremony.~~ Done.
 - ~~Player lifecycle: a way to leave a game, and auto-expiry for the mafia "inactive" toggle instead of a standing manual switch.~~ Done.
 - ~~Error handling: every repository action that can throw a `StateError` should show a message, not crash the screen.~~ Done.
 - ~~Round/day cutoff: resolve votes automatically at a configured daily time instead of relying only on a manual button.~~ Done.
-- **Remove/gate temporary & debug-only elements** — the "Reveal roles (debug)" toggle, the "Resolve today's votes (debug)" button, "Quick start (8 players)", and the tester/role-switcher flow being a first-class option right next to "Continue as a player" on the entry screen all need *some* story (a build flag, a settings toggle, a secret gesture) before this is handed to real coworkers who aren't in on the testing.
-- **Minor polish** — the SVG seals/marks under `assets/graphics/` are simple placeholder shapes, fine for a pilot but worth a real illustration pass; numeric form fields (case creation, etc.) silently fall back to defaults on bad input instead of showing a validation error.
+- **Remove/gate temporary & debug-only elements — deliberately deferred, not blocking Phase 1b.** The "Reveal roles (debug)" toggle, the "Resolve today's votes (debug)" button, "Quick start (8 players)", and the tester/role-switcher flow all stay as-is through Phase 1b on purpose: they're the tool for exercising the real backend the same way they've exercised the local one (see Phase 1b's "Auth and the debug switcher" section below for how they keep working against Firebase). The gate — a build flag, a settings toggle, a secret gesture — still needs to happen, just later: before any real coworker who isn't in on the testing gets a build.
+- ~~Numeric form fields (case creation) silently fall back to defaults on bad input instead of showing a validation error.~~ Done — villagers/mafia/daily-cutoff fields now show a live inline warning on unparseable input, but still fall back the same way they always did rather than blocking submission (a deliberate choice to keep the never-blocks property).
+- **Minor polish, remaining** — most SVG seals/marks under `assets/graphics/` are still simple placeholder shapes; `mafia_seal.svg` got a redesign (matching `villager_seal.svg`'s compass-rose framing, with a domino-mask motif and a crack through the seal, replacing a shape that didn't read clearly as anything), the rest are deliberately left as-is for now.
 
-**Exit criteria to move on to Phase 1b:** you've played at least one full local round-trip (create → join → start → vote → resolve → recruit → unmask) yourself across a few switched identities, the rules as coded match what Season Zero validated, and nothing in the local implementation feels like it needs a fundamentally different data shape.
+**Exit criteria to move on to Phase 1b:** you've played at least one full local round-trip (create → join → start → vote → resolve → recruit → unmask) yourself across a few switched identities, the rules as coded match what Season Zero validated, and nothing in the local implementation feels like it needs a fundamentally different data shape. Met.
 
 ## Phase 1b — Firebase backend integration
 
@@ -55,23 +58,55 @@ See `office_game_app/README.md` for setup steps (`flutter create .` to generate 
 - **Backend: Firebase** (Firestore + Cloud Functions + Firebase Auth + Cloud Messaging). For a solo, moderately-experienced developer trying to move fast, a backend-as-a-service beats standing up your own server — no infra to manage, generous free tier for a pilot-sized user base, and Firestore's realtime listeners give you live game-state updates without building your own websocket layer. Supabase is a reasonable alternative if you'd rather work in SQL, but Firebase + Flutter is the more heavily documented combination, which matters when you're not yet an advanced developer.
 - **Auth:** phone number or email + display name only. No corporate SSO, deliberately (design pillar #3).
 
-### Data model sketch
+### The highest-risk technical piece: redaction can't live in security rules alone
 
-Maps directly onto the domain models already written in Phase 1a:
+This game only works if hidden information stays hidden — a bug that lets a villager's client read the mafia's thread, or the full roster, doesn't just annoy someone, it breaks the game outright for that session. But the specific risk is sharper than "write careful security rules": **Firestore security rules are a binary allow/deny on a whole document, not a per-viewer field transform.** `LocalGameRepository._publicView` (`lib/data/local/local_game_repository.dart`) returns *different data to different readers of the same player* — role forced to `villager` unless the viewer is that player, an already-unmasked player, or a cell-linked mafia member. There is no security rule that says "let anyone read this document, but each reader sees different field values." Reproducing this needs an actual data-model answer, not just careful rules — that's what the shape below is for.
 
-- `games/{gameId}` — location tag, status (recruiting / active / ended), min-player threshold, narrative skin, created-at.
-- `games/{gameId}/players/{playerId}` — role (mafia/villager), vote weight, active/inactive flag, join timestamp.
-- `games/{gameId}/mafiaThread/*` — decisions, proposed elimination method, per-member acceptance flags. **Readable only by current mafia members** — enforce with Firestore security rules keyed off the player's role field, not client-side hiding.
-- `games/{gameId}/observations/*` — free-text entries, tagged with round number; a scheduled Cloud Function purges entries older than 3 rounds so the ephemerality is a real deletion, not just a UI filter.
-- `games/{gameId}/votes/*` — per-round votes, tallied by a Cloud Function at the configured daily cutoff.
+Realistic options for "different readers, different data" are: (a) route every affected read through a Cloud Function/callable API instead of a native listener, losing realtime streaming, or (b) maintain separate documents per audience, kept in sync server-side. Since `watchVisiblePlayers`/`watchGame`/`watchGames` are `Stream`-returning in `GameRepository` and the UI depends on that for live updates, (b) is the only option that doesn't force rewriting every screen that consumes those streams.
 
-### The highest-risk technical piece
+**Data model, per game, per player:**
 
-This game only works if hidden information stays hidden. A bug that lets a villager's client read the mafia's thread, or that exposes the full roster through a permissive query, doesn't just annoy someone — it breaks the game outright for that entire session. Budget real time for Firestore security rules and test them adversarially (try to read what a given role shouldn't be able to), rather than treating this as an afterthought once the UI works. `LocalGameRepository.watchVisiblePlayers` and `watchMafiaThread` already enforce the equivalent logic in-process — the Firestore rules need to reproduce exactly that behavior, not a looser version of it.
+- `games/{gameId}/players/{playerId}` — the *true* doc: real role, real vote weight, `recruiterId`, `recruitedPlayerIds`, `pendingRecruiterId`. Readable only by `playerId` themself. Writable only by Cloud Functions — the Admin SDK bypasses rules, so client writes to this path are denied outright (this is also where "vote-weight subtraction/role assignment must be server-side" actually gets enforced, not just stated as a principle).
+- `games/{gameId}/publicPlayers/{playerId}` — a redacted mirror: name, `isActive`, `wasUnmasked`, `hasLeft`, `joinedAt`, role forced to `villager` unless `wasUnmasked`, vote weight forced to the starting value. Readable by any player who has joined that game. A Firestore `onWrite` trigger on the true doc keeps this in sync — exactly `_publicView`, moved server-side and run once per write instead of once per read.
+- `games/{gameId}/cellViews/{viewerId}` — small, mafia-only: the true role/status of exactly that viewer's `recruiterId` and members of `recruitedPlayerIds` (at most a couple of entries). Same trigger maintains it. Reproduces the `knowsCellLink` branch of `LocalGameRepository._visiblePlayers` without exposing it to anyone else.
+- `FirebaseGameRepository.watchVisiblePlayers` composes `publicPlayers` + (if the viewer is mafia) `cellViews/{viewerId}` client-side into the same `List<Player>` shape the UI already expects — no UI code changes, matching the seam this whole architecture is built around.
+- `games/{gameId}` itself — location tag, status, min-player threshold, narrative skin, created-at, plus the already-public forewarning fields (`eliminationMethodDescription`, `eliminationSignalExecuted`/`Confirmed`, `recruitmentSignDescription`, `recruitmentSignExecuted`/`Confirmed`) — these are already method/sign-only, never-the-target by design (concept doc §6), so the doc itself can be readable by any game member with no redaction needed.
+- `games/{gameId}/mafiaThread/*` doesn't need the mirror treatment — it's a genuine binary gate (mafia or not), which a rule *can* express directly by `get()`-ing the requester's own true player doc:
+  ```
+  allow read: if get(/databases/$(db)/documents/games/$(gameId)/players/$(request.auth.uid)).data.role == 'mafia'
+              && get(...).data.wasUnmasked == false;
+  ```
+- `games/{gameId}/votes/*` and `games/{gameId}/observations/*` aren't secret per the concept doc (voting history is permanent and visible to everyone; observations are ephemeral, not role-gated) — plain "readable by any current game member" rules. Observation purging: a scheduled Cloud Function deletes entries older than 3 rounds, a real deletion not just a UI filter.
 
-### Server-side (Cloud Functions) vs client-side
+Budget real time for testing these rules adversarially once built (villager tries to read another player's true doc/role; non-member tries to read a game's roster; a just-unmasked player confirms they lose `mafiaThread` access; a mafia member confirms they see only their own 1–2 cell links) — this is the one piece of Phase 1b where a shortcut directly breaks the game, not just the UX.
 
-Anything that determines game truth — role assignment at game start, vote-weight subtraction, vote resolution, the unmasking flip — should be a Cloud Function, not client logic. A moderately-experienced solo dev will be tempted to do this client-side because it's faster to write; resist it here specifically, since it's the one place where a client-side shortcut directly enables cheating (a modified client could just decrement someone else's weight, or peek at the mafia roster before the reveal).
+### Cloud Functions inventory
+
+Anything that decides game truth must be a callable Cloud Function, never a direct client write — checked here against the actual `GameRepository` interface (`lib/domain/repositories/game_repository.dart`) rather than left as a general principle:
+
+- `createGame`, `addPlayer` — role draw the instant the roster hits `minPlayers` (mirrors `_autoStartIfReady`/`_activateGame`).
+- `castVote`, `resolveVotesForDay` — the latter also runs on a **schedule** (daily cutoff) in addition to being callable, matching `_scheduleDailyCutoff`'s self-rescheduling behavior. Note: in `LocalGameRepository` this is a plain `dart:async` `Timer`, which only fires while the process is alive — a real deployment needs Cloud Scheduler / a scheduled function instead, for a device that goes to sleep.
+- `proposeElimination`, `acceptEliminationProposal`, `executeElimination`, `acknowledgeEliminationSignal`.
+- `proposeRecruitment`, `acceptRecruitmentProposal`, `executeRecruitment`, `respondToRecruitment`.
+- `leaveGame`, `setMemberActive` (plus the 24h auto-reactivation, currently another local `Timer` — same scheduled-function treatment).
+- `sendMafiaMessage`, `logObservation` — no anti-cheat concern, but still funneled through functions for consistency and to keep those write paths server-validated (right author, right game, right round).
+
+Left as plain Firestore reads/writes, not Cloud Functions: `fetchUnacknowledgedMoments`, `fetchAllMoments`, `acknowledgeAllMoments`, `recordReentry` — per-player notification bookkeeping, not contested game state; a rule of `playerId == request.auth.uid` is sufficient.
+
+### Auth and the debug switcher
+
+The plan (see Phase 1a above) is to keep the debug role switcher and debug buttons working *against the real backend* through Phase 1b, then gate them before real coworkers get a build — not gate them as a Phase 1b prerequisite. That needs an answer, since `AuthService.knownUsers`/`switchToUser` (`lib/domain/repositories/auth_service.dart`) are debug-switcher concepts with no natural real-Firebase-Auth equivalent — you can't enumerate "every account ever signed in on this device" or silently swap sessions without credentials in real Firebase Auth.
+
+Recommendation: run the **Firebase Local Emulator Suite** (Auth + Firestore + Functions) as the default dev target through all of Phase 1b, the same role `LocalGameRepository` plays today — `flutter run` against emulators, no real project touched, no real phone/email needed, free and instantly resettable. For the debug switcher specifically: a debug-gated callable function (`debugMintTestUser`, denied by rules for any build not pointed at the emulator) creates/looks up a named test user and returns a custom auth token, which `FirebaseAuthService`'s debug path exchanges via `signInWithCustomToken`. `knownUsers` becomes "test users this emulator session has minted"; `switchToUser` becomes "re-exchange that user's stored custom token." `RoleSwitcherScreen` keeps working unchanged against a real (emulated) backend, and the same debug function simply isn't reachable once the app points at the real project for pilot testing with actual coworkers.
+
+### Milestones (in build order)
+
+1. **Firebase project + emulator setup.** Create the Firebase project (console access, billing if needed); add `firebase_core`, `cloud_firestore`, `firebase_auth`, `cloud_functions` to `pubspec.yaml`; `flutterfire configure`; stand up the Local Emulator Suite as the default dev target.
+2. **Auth vertical slice**, still on `LocalGameRepository` for game data: real (emulated) `FirebaseAuthService.signInWithDisplayName` plus the debug custom-token minting path. Proves sign-in UX and the emulator loop before the harder redaction problem.
+3. **Read-only game data slice**: `createGame`/`addPlayer`/`watchGames`/`watchVisiblePlayers` against Firestore with the true/public-mirror/cell-view split above, still no voting. This is where the redaction architecture gets built and adversarially tested.
+4. **Game-truth Cloud Functions**: vote casting/resolution, elimination/recruitment lifecycle, unmasking — the full inventory above, replacing `LocalGameRepository`'s equivalent logic function-by-function, checked conceptually against `test/vote_resolution_test.dart`, `test/mafia_thread_visibility_test.dart`, `test/recruitment_test.dart`, etc.
+5. **Scheduled functions**: daily vote cutoff, mafia-inactive auto-reactivation, 3-round observation purge.
+6. **Swap the DI seam**: `lib/main.dart`'s `Provider<GameRepository>`/`Provider<AuthService>` point at `Firebase*` instead of `Local*` for a real (non-emulator) pilot build — the one-line change the whole seam was built for.
 
 ### Launch logistics (easy to forget, easy to plan for)
 

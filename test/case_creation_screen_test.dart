@@ -179,4 +179,85 @@ void main() {
     final games = await repo.watchGames(viewerId: 'p1').first;
     expect(games.single.dailyCutoffTime, const Duration(hours: 9, minutes: 15));
   });
+
+  testWidgets('typing non-numeric text into villagers/mafia shows a warning but still lets '
+      'the case open, falling back the same way it always did', (tester) async {
+    final repo = LocalGameRepository();
+    await tester.pumpWidget(Provider<GameRepository>.value(
+      value: repo,
+      child: const MaterialApp(
+        home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
+      ),
+    ));
+
+    expect(find.text('Enter a number'), findsNothing);
+
+    await tester.enterText(villagersField(), 'abc');
+    await tester.pump();
+    expect(find.text('Enter a number'), findsOneWidget);
+
+    await tester.enterText(mafiaField(), 'xyz');
+    await tester.pump();
+    expect(find.text('Enter a number'), findsNWidgets(2));
+
+    await tester.ensureVisible(find.text('Open the case'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Open the case'));
+    await tester.pumpAndSettle();
+
+    // Still opens — the warning is visible, but nothing is blocked.
+    final games = await repo.watchGames(viewerId: 'p1').first;
+    expect(games, hasLength(1));
+  });
+
+  testWidgets('clearing an invalid villagers/mafia value makes the warning go away',
+      (tester) async {
+    await tester.pumpWidget(const MaterialApp(
+      home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
+    ));
+
+    await tester.enterText(villagersField(), 'nope');
+    await tester.pump();
+    expect(find.text('Enter a number'), findsOneWidget);
+
+    await tester.enterText(villagersField(), '7');
+    await tester.pump();
+    expect(find.text('Enter a number'), findsNothing);
+  });
+
+  testWidgets('an unparseable daily cutoff shows a warning but still creates the case with '
+      'the 17:00 fallback', (tester) async {
+    final repo = LocalGameRepository();
+    await tester.pumpWidget(Provider<GameRepository>.value(
+      value: repo,
+      child: const MaterialApp(
+        home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
+      ),
+    ));
+
+    expect(find.textContaining('Use HH:mm'), findsNothing);
+
+    await tester.enterText(cutoffField(), 'banana');
+    await tester.pump();
+    expect(find.textContaining('Use HH:mm'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Open the case'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Open the case'));
+    await tester.pumpAndSettle();
+
+    final games = await repo.watchGames(viewerId: 'p1').first;
+    expect(games.single.dailyCutoffTime, const Duration(hours: 17));
+  });
+
+  testWidgets('an out-of-range daily cutoff (e.g. 25:99) is treated as invalid too',
+      (tester) async {
+    await tester.pumpWidget(const MaterialApp(
+      home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
+    ));
+
+    await tester.enterText(cutoffField(), '25:99');
+    await tester.pump();
+    expect(find.textContaining('Use HH:mm'), findsOneWidget);
+  });
 }

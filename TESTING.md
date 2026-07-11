@@ -71,8 +71,10 @@ settings later — not yet.)
 | 0b.6 | Set "mafia" to 1, villagers to 3, then create + join 3 more players | Exactly 1 mafia among the 4, matching §0.11's auto-start regression test |
 | 0b.7 | Create a case with villagers = 8, mafia = 2 (10 players total), start it, then check "The Wire" as mafia for a "Propose recruitment" option | Available immediately from round 1 — the threshold is computed as *exactly* this case's own starting ratio (2/8 = 0.25), so the starting ratio always already satisfies "at or below the threshold." Unlike the tester flow's fixed 0.2 default (§6), a case created here never starts out recruitment-locked |
 | 0b.8 | Set "Daily vote cutoff" to a time a minute or two from now (24h format, e.g. "14:32") | See §13 for what this actually does once the case is running |
-| 0b.9 | Type something unparseable into "Daily vote cutoff" (e.g. "banana") and create the case | Falls back to the 17:00 default rather than crashing or blocking case creation |
-| 0b.10 | Leave every field at its default (6 villagers, 2 mafia, 17:00 cutoff) and create a case | 8 players total; 2 mafia among them; recruitment unlock threshold computed as 2/6 ≈ 0.33 (this case's own starting split); 1-hour execution window; 17:00 daily cutoff |
+| 0b.9 | Type something unparseable into "Daily vote cutoff" (e.g. "banana", or an out-of-range time like "25:99") | A red "Use HH:mm — using 17:00 for now" line appears under the field live, as you type. Tapping "Open the case" still works — falls back to 17:00, same as before, just with the fallback now visible instead of silent |
+| 0b.10 | Type something non-numeric into "villagers" or "mafia" (e.g. "abc") | A red "Enter a number" line appears under that field live. "Open the case" is still tappable — the roster preview and the case itself fall back the same way they always did (§0b.4), just with a visible warning now |
+| 0b.11 | Fix an invalid field back to a valid value | Its warning line disappears immediately, no need to re-open the screen |
+| 0b.12 | Leave every field at its default (6 villagers, 2 mafia, 17:00 cutoff) and create a case | 8 players total; 2 mafia among them; recruitment unlock threshold computed as 2/6 ≈ 0.33 (this case's own starting split); 1-hour execution window; 17:00 daily cutoff |
 
 ---
 

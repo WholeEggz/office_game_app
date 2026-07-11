@@ -34,16 +34,18 @@ class _CaseCreationScreenState extends State<CaseCreationScreen> {
   @override
   void initState() {
     super.initState();
-    // Repaints the derived "players" total live as either editable stat
-    // changes.
+    // Repaints the derived "players" total (and the validation warnings
+    // below) live as any of the three editable fields change.
     _villagersController.addListener(_refreshSummary);
     _mafiaCountController.addListener(_refreshSummary);
+    _dailyCutoffController.addListener(_refreshSummary);
   }
 
   @override
   void dispose() {
     _villagersController.removeListener(_refreshSummary);
     _mafiaCountController.removeListener(_refreshSummary);
+    _dailyCutoffController.removeListener(_refreshSummary);
     _nameController.dispose();
     _villagersController.dispose();
     _mafiaCountController.dispose();
@@ -51,16 +53,39 @@ class _CaseCreationScreenState extends State<CaseCreationScreen> {
     super.dispose();
   }
 
-  /// Parses "HH:mm" (24-hour) into a time-of-day Duration since midnight,
-  /// falling back to the concept doc's own suggested default (5:00 PM) on
-  /// anything unparseable rather than rejecting the input outright.
-  Duration _parseDailyCutoff(String text) {
+  /// Parses "HH:mm" (24-hour) into hours/minutes, or null if the text
+  /// isn't a valid two-part, in-range 24-hour time. Shared by
+  /// [_parseDailyCutoff] (what actually gets used) and [_cutoffError]
+  /// (whether to warn about it).
+  ({int hours, int minutes})? _tryParseCutoff(String text) {
     final parts = text.trim().split(':');
-    final hours = parts.isNotEmpty ? int.tryParse(parts[0]) : null;
-    final minutes = parts.length > 1 ? int.tryParse(parts[1]) : 0;
-    if (hours == null || minutes == null) return const Duration(hours: 17);
-    return Duration(hours: hours, minutes: minutes);
+    if (parts.length != 2) return null;
+    final hours = int.tryParse(parts[0]);
+    final minutes = int.tryParse(parts[1]);
+    if (hours == null || minutes == null) return null;
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+    return (hours: hours, minutes: minutes);
   }
+
+  /// Falls back to the concept doc's own suggested default (5:00 PM) on
+  /// anything unparseable rather than rejecting the input outright — see
+  /// [_cutoffError] for the warning shown alongside this fallback, so the
+  /// fallback is visible instead of silent.
+  Duration _parseDailyCutoff(String text) {
+    final parsed = _tryParseCutoff(text);
+    if (parsed == null) return const Duration(hours: 17);
+    return Duration(hours: parsed.hours, minutes: parsed.minutes);
+  }
+
+  String? get _villagersError =>
+      int.tryParse(_villagersController.text.trim()) == null ? 'Enter a number' : null;
+
+  String? get _mafiaError =>
+      int.tryParse(_mafiaCountController.text.trim()) == null ? 'Enter a number' : null;
+
+  String? get _cutoffError => _tryParseCutoff(_dailyCutoffController.text) == null
+      ? 'Use HH:mm — using 17:00 for now'
+      : null;
 
   void _refreshSummary() => setState(() {});
 
@@ -141,6 +166,8 @@ class _CaseCreationScreenState extends State<CaseCreationScreen> {
                     villagersController: _villagersController,
                     mafiaController: _mafiaCountController,
                     roster: _expectedRoster(),
+                    villagersError: _villagersError,
+                    mafiaError: _mafiaError,
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   Text(_rosterCaption(), style: AppTypography.dataSmall),
@@ -150,6 +177,7 @@ class _CaseCreationScreenState extends State<CaseCreationScreen> {
                     label: 'DAILY VOTE CUTOFF',
                     controller: _dailyCutoffController,
                     width: 80,
+                    errorText: _cutoffError,
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   Text(
@@ -173,11 +201,15 @@ class _EditableRosterSummary extends StatelessWidget {
   final TextEditingController villagersController;
   final TextEditingController mafiaController;
   final ({int total, int villagers, int mafia}) roster;
+  final String? villagersError;
+  final String? mafiaError;
 
   const _EditableRosterSummary({
     required this.villagersController,
     required this.mafiaController,
     required this.roster,
+    this.villagersError,
+    this.mafiaError,
   });
 
   @override
@@ -191,6 +223,7 @@ class _EditableRosterSummary extends StatelessWidget {
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _RosterFigure(
             valueKey: const ValueKey('expected_roster_total'),
@@ -203,12 +236,14 @@ class _EditableRosterSummary extends StatelessWidget {
             controller: villagersController,
             label: 'villagers',
             color: AppColors.brass,
+            errorText: villagersError,
           ),
           _EditableRosterFigure(
             fieldKey: const ValueKey('roster_mafia_field'),
             controller: mafiaController,
             label: 'mafia',
             color: AppColors.crimsonText,
+            errorText: mafiaError,
           ),
         ],
       ),
@@ -221,12 +256,14 @@ class _EditableRosterFigure extends StatelessWidget {
   final TextEditingController controller;
   final String label;
   final Color color;
+  final String? errorText;
 
   const _EditableRosterFigure({
     required this.fieldKey,
     required this.controller,
     required this.label,
     required this.color,
+    this.errorText,
   });
 
   @override
@@ -249,6 +286,14 @@ class _EditableRosterFigure extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.xs),
         Text(label, style: AppTypography.dataSmall),
+        if (errorText != null) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            errorText!,
+            textAlign: TextAlign.center,
+            style: AppTypography.dataSmall.copyWith(color: AppColors.crimsonText),
+          ),
+        ],
       ],
     );
   }
@@ -288,44 +333,55 @@ class _BoxedDataField extends StatelessWidget {
   final String label;
   final TextEditingController controller;
   final double width;
+  final String? errorText;
 
   const _BoxedDataField({
     required this.fieldKey,
     required this.label,
     required this.controller,
     required this.width,
+    this.errorText,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceRaised,
-        borderRadius: BorderRadius.circular(AppRadii.sm),
-        border: Border.all(color: AppColors.borderHairline),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(label,
-                style: AppTypography.dataSmall.copyWith(color: AppColors.textSecondary)),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceRaised,
+            borderRadius: BorderRadius.circular(AppRadii.sm),
+            border: Border.all(color: AppColors.borderHairline),
           ),
-          SizedBox(
-            width: width,
-            child: TextField(
-              key: fieldKey,
-              controller: controller,
-              textAlign: TextAlign.center,
-              style: AppTypography.data.copyWith(color: AppColors.textPrimary, fontSize: 18),
-              decoration: const InputDecoration(
-                isDense: true,
-                contentPadding: EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(label,
+                    style: AppTypography.dataSmall.copyWith(color: AppColors.textSecondary)),
               ),
-            ),
+              SizedBox(
+                width: width,
+                child: TextField(
+                  key: fieldKey,
+                  controller: controller,
+                  textAlign: TextAlign.center,
+                  style: AppTypography.data.copyWith(color: AppColors.textPrimary, fontSize: 18),
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(vertical: 4),
+                  ),
+                ),
+              ),
+            ],
           ),
+        ),
+        if (errorText != null) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Text(errorText!, style: AppTypography.dataSmall.copyWith(color: AppColors.crimsonText)),
         ],
-      ),
+      ],
     );
   }
 }

@@ -58,22 +58,44 @@ one-device stand-in for the real multi-device game, not the real thing.
 
 ## Phase 1b migration checklist (Firebase)
 
-Implement `FirebaseGameRepository` / `FirebaseAuthService` against the data
-model in `../implementation_plan.md` (`games/{gameId}`,
-`.../players/{playerId}`, `.../mafiaThread`, `.../observations`,
-`.../votes`):
+Full detail (why each piece is shaped this way, especially the redaction
+architecture) lives in `../implementation_plan.md`'s Phase 1b section —
+this is the condensed build-order checklist.
 
-- [ ] Firebase project + Firestore + Cloud Functions + Auth + Cloud Messaging.
-- [ ] Auth: phone number or email + display name only (no corporate SSO).
-- [ ] Cloud Functions for anything that determines game truth: role
-      assignment at start, vote-weight subtraction, vote resolution, the
-      unmasking flip. Never client-side — a modified client could otherwise
-      decrement another player's weight or read the mafia roster early.
-- [ ] Firestore security rules that reproduce `LocalGameRepository`'s
-      `watchVisiblePlayers` / `watchMafiaThread` redaction exactly, tested
-      adversarially (try to read what a given role shouldn't be able to).
-- [ ] Scheduled Cloud Function to purge observations older than 3 rounds —
-      a real deletion, not just a UI filter.
-- [ ] Swap the `Provider<GameRepository>` / `Provider<AuthService>` in
-      `lib/main.dart` from the `Local*` implementations to the `Firebase*`
-      ones — no UI code should need to change.
+The debug role switcher and debug buttons (`RoleSwitcherScreen`, "Reveal
+roles," "Resolve today's votes," "Quick start") **stay as-is through this
+whole phase on purpose** — they're the tool for exercising the real
+backend, gated only once real coworkers start getting builds.
+
+- [ ] **Milestone 1 — project + emulator.** Create the Firebase project;
+      add `firebase_core`, `cloud_firestore`, `firebase_auth`,
+      `cloud_functions` to `pubspec.yaml`; `flutterfire configure`; stand up
+      the Firebase Local Emulator Suite (Auth + Firestore + Functions) as
+      the default dev target, the same role `LocalGameRepository` plays now.
+- [ ] **Milestone 2 — auth vertical slice**, still on `LocalGameRepository`
+      for game data: real (emulated) `FirebaseAuthService.signInWithDisplayName`,
+      plus a debug-gated `debugMintTestUser` Cloud Function +
+      `signInWithCustomToken` so the role switcher's `knownUsers`/`switchToUser`
+      keep working against emulated Firebase Auth instead of the current
+      fake in-memory identities.
+- [ ] **Milestone 3 — read-only game data.** `createGame`/`addPlayer`/
+      `watchGames`/`watchVisiblePlayers` against Firestore using the
+      true-doc/public-mirror/cell-view split (`games/{gameId}/players/*` →
+      private; `.../publicPlayers/*` → redacted mirror kept in sync by an
+      `onWrite` trigger; `.../cellViews/{viewerId}` → mafia-only cell-link
+      reveal) — this is where the redaction logic actually gets built and
+      needs adversarial testing (see implementation_plan.md), not a plain
+      "keyed off the role field" rule.
+- [ ] **Milestone 4 — game-truth Cloud Functions**: vote casting/resolution,
+      elimination/recruitment lifecycle, unmasking. Never client-side — a
+      modified client could otherwise decrement another player's weight or
+      read the mafia roster early. Full function list in
+      `implementation_plan.md`.
+- [ ] **Milestone 5 — scheduled functions**: daily vote cutoff
+      (`resolveVotesForDay`, replacing the local `Timer`), mafia-inactive
+      24h auto-reactivation, and observation purging (older than 3 rounds —
+      a real deletion, not just a UI filter).
+- [ ] **Milestone 6 — swap the DI seam.** `Provider<GameRepository>` /
+      `Provider<AuthService>` in `lib/main.dart`, from `Local*` to
+      `Firebase*`, for a real (non-emulator) pilot build — no UI code
+      should need to change.

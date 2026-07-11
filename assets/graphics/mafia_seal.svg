@@ -1,8 +1,16 @@
 <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor">
   <circle cx="50" cy="50" r="45" stroke-width="2.5"/>
   <circle cx="50" cy="50" r="38" stroke-width="1" opacity="0.6"/>
-  <ellipse cx="35" cy="48" rx="12" ry="6" stroke-width="2.5" transform="rotate(-8 35 48)"/>
-  <ellipse cx="66" cy="53" rx="13" ry="7" stroke-width="2.5" transform="rotate(6 66 53)"/>
-  <path d="M47,45 Q50,40 53,47" stroke-width="2"/>
-  <path d="M15,20 L38,42 L30,50 L55,58 L48,68 L85,80" stroke-width="2"/>
+  <line x1="95" y1="50" x2="89" y2="50" stroke-width="2"/>
+  <line x1="81.82" y1="81.82" x2="77.58" y2="77.58" stroke-width="2"/>
+  <line x1="50" y1="95" x2="50" y2="89" stroke-width="2"/>
+  <line x1="18.18" y1="81.82" x2="22.42" y2="77.58" stroke-width="2"/>
+  <line x1="5" y1="50" x2="11" y2="50" stroke-width="2"/>
+  <line x1="18.18" y1="18.18" x2="22.42" y2="22.42" stroke-width="2"/>
+  <line x1="50" y1="5" x2="50" y2="11" stroke-width="2"/>
+  <line x1="81.82" y1="18.18" x2="77.58" y2="22.42" stroke-width="2"/>
+  <path d="M20,46 Q30,34 41,44 Q30,54 20,46 Z" fill="currentColor" stroke-width="2"/>
+  <path d="M80,46 Q70,34 59,44 Q70,54 80,46 Z" fill="currentColor" stroke-width="2"/>
+  <path d="M41,42 Q50,34 59,42" stroke-width="2.5"/>
+  <path d="M14,44 L38,68 L30,72 L58,86 L50,92" stroke-width="1.6" opacity="0.8"/>
 </svg>
