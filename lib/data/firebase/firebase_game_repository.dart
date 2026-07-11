@@ -19,19 +19,24 @@ const _startingVoteWeight = 3;
 /// Phase 1b target: Firestore + Cloud Functions, per the redaction
 /// architecture in `implementation_plan.md` — a true-doc/public-mirror/
 /// cell-view split, since Firestore security rules can't express
-/// `LocalGameRepository`'s per-viewer role redaction directly (a rule is a
-/// binary allow/deny on a whole document, not a per-viewer field
-/// transform). `createGame`/`addPlayer`/`watchGames`/`watchVisiblePlayers`
-/// are implemented (Milestone 3); everything else still throws
-/// `UnimplementedError` until Milestone 4 replaces
-/// `LocalGameRepository`'s equivalent logic function-by-function.
+/// `LocalGameRepository`'s per-viewer role redaction directly. Milestone 3
+/// built the read-only slice (createGame/addPlayer/watchGames/
+/// watchVisiblePlayers); Milestone 4 adds the rest of the game-truth
+/// inventory — voting, elimination/recruitment lifecycle, unmasking,
+/// leaveGame/setMemberActive/sendMafiaMessage/logObservation — plus the
+/// per-player moments bookkeeping, which is plain rule-gated Firestore
+/// reads/writes rather than a Cloud Function (see firestore.rules'
+/// `moments` comment).
 ///
-/// One thing that doesn't carry over as-is from `LocalGameRepository`: the
-/// 1-hour execution-window lapse there is a plain `dart:async` `Timer`,
-/// which only fires while this process is running. Here it needs to be a
-/// scheduled Cloud Function (or a Firestore TTL-style sweep) so a proposal
-/// still lapses correctly even if every device is offline when the window
-/// closes.
+/// Still missing, deliberately deferred to Milestone 5: the 1-hour
+/// execution-window auto-lapse, the 24h mafia-inactive auto-reactivation,
+/// and the daily-cutoff auto-resolve are all `dart:async Timer`s in
+/// `LocalGameRepository` that only fire while that process is alive — a
+/// real deployment needs Cloud Scheduler / scheduled functions instead.
+/// `watchGame` (the debug role switcher's full unredacted roster) also
+/// stays unimplemented — no client can safely read every player's true
+/// doc under this architecture, debug-only or not; that needs its own
+/// answer, not attempted here.
 class FirebaseGameRepository implements GameRepository {
   FirebaseGameRepository({FirebaseFirestore? firestore, FirebaseFunctions? functions})
       : _db = firestore ?? FirebaseFirestore.instance,
@@ -41,6 +46,26 @@ class FirebaseGameRepository implements GameRepository {
   final FirebaseFunctions _functions;
 
   CollectionReference<Map<String, dynamic>> get _games => _db.collection('games');
+
+  /// Calls [name] and translates the validation-failure codes every
+  /// Cloud Function in this inventory uses ('failed-precondition',
+  /// 'not-found', 'already-exists') into a [StateError] — matching
+  /// `LocalGameRepository`, which throws `StateError` for every one of
+  /// these same validation failures, and preserving the `on StateError`
+  /// handlers already in the UI (role_switcher_screen.dart,
+  /// player_entry_screen.dart) without leaking Firebase-specific
+  /// exception types past this seam.
+  Future<Map<String, dynamic>> _call(String name, Map<String, dynamic> data) async {
+    try {
+      final result = await _functions.httpsCallable(name).call<Map<String, dynamic>>(data);
+      return result.data;
+    } on FirebaseFunctionsException catch (e) {
+      if (e.code == 'already-exists' || e.code == 'failed-precondition' || e.code == 'not-found') {
+        throw StateError(e.message ?? e.code);
+      }
+      rethrow;
+    }
+  }
 
   @override
   Future<Game> createGame({
@@ -54,8 +79,7 @@ class FirebaseGameRepository implements GameRepository {
     Duration dailyCutoffTime = const Duration(hours: 17),
     String rulesDescription = '',
   }) async {
-    final callable = _functions.httpsCallable('createGame');
-    final result = await callable.call<Map<String, dynamic>>({
+    final result = await _call('createGame', {
       'locationTag': locationTag,
       'minPlayers': minPlayers,
       'creatorId': creatorId,
@@ -66,7 +90,7 @@ class FirebaseGameRepository implements GameRepository {
       'dailyCutoffSeconds': dailyCutoffTime.inSeconds,
       'rulesDescription': rulesDescription,
     });
-    final gameId = result.data['gameId'] as String;
+    final gameId = result['gameId'] as String;
     // Callers only ever use the returned game's `id` (case creation and the
     // debug role switcher both immediately navigate on it) — constructing
     // this from the known request params avoids a read-after-write race
@@ -93,23 +117,7 @@ class FirebaseGameRepository implements GameRepository {
     required String playerId,
     required String name,
   }) async {
-    final callable = _functions.httpsCallable('addPlayer');
-    try {
-      await callable.call<Map<String, dynamic>>({
-        'gameId': gameId,
-        'playerId': playerId,
-        'name': name,
-      });
-    } on FirebaseFunctionsException catch (e) {
-      // Preserves GameRepository.addPlayer's documented StateError contract
-      // (role_switcher_screen.dart and player_entry_screen.dart both catch
-      // `on StateError` specifically) without leaking Firebase-specific
-      // exception types past this seam.
-      if (e.code == 'already-exists' || e.code == 'failed-precondition' || e.code == 'not-found') {
-        throw StateError(e.message ?? e.code);
-      }
-      rethrow;
-    }
+    await _call('addPlayer', {'gameId': gameId, 'playerId': playerId, 'name': name});
     return Player(id: playerId, name: name, role: PlayerRole.villager, joinedAt: DateTime.now());
   }
 
@@ -117,8 +125,9 @@ class FirebaseGameRepository implements GameRepository {
   Future<void> leaveGame({
     required String gameId,
     required String playerId,
-  }) =>
-      throw UnimplementedError();
+  }) async {
+    await _call('leaveGame', {'gameId': gameId, 'playerId': playerId});
+  }
 
   @override
   Future<void> startGame(String gameId) => throw UnimplementedError();
@@ -285,12 +294,100 @@ class FirebaseGameRepository implements GameRepository {
     );
   }
 
+  Vote _voteFromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data();
+    return Vote(
+      id: doc.id,
+      gameId: doc.reference.parent.parent!.id,
+      voterId: data['voterId'] as String? ?? '',
+      targetPlayerId: data['targetPlayerId'] as String? ?? '',
+      round: (data['round'] as num?)?.toInt() ?? 1,
+      weight: (data['weight'] as num?)?.toInt() ?? 0,
+      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+    );
+  }
+
+  Observation _observationFromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data();
+    return Observation(
+      id: doc.id,
+      gameId: doc.reference.parent.parent!.id,
+      authorId: data['authorId'] as String? ?? '',
+      targetPlayerId: data['targetPlayerId'] as String?,
+      text: data['text'] as String? ?? '',
+      round: (data['round'] as num?)?.toInt() ?? 1,
+      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+    );
+  }
+
+  MafiaThreadEntry _mafiaThreadEntryFromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data();
+    return MafiaThreadEntry(
+      id: doc.id,
+      gameId: doc.reference.parent.parent!.id,
+      round: (data['round'] as num?)?.toInt() ?? 1,
+      authorId: data['authorId'] as String? ?? '',
+      type: MafiaThreadEntryType.values.byName(data['type'] as String? ?? 'message'),
+      message: data['message'] as String?,
+      proposedMethod: data['proposedMethod'] as String?,
+      proposedTargetId: data['proposedTargetId'] as String?,
+      acceptedByPlayerIds: (data['acceptedByPlayerIds'] as List<dynamic>?)?.cast<String>() ?? const [],
+      agreedAt: (data['agreedAt'] as Timestamp?)?.toDate(),
+      executedAt: (data['executedAt'] as Timestamp?)?.toDate(),
+      executedByPlayerId: data['executedByPlayerId'] as String?,
+      lapsed: data['lapsed'] as bool? ?? false,
+      confirmedAt: (data['confirmedAt'] as Timestamp?)?.toDate(),
+      recruitmentAccepted: data['recruitmentAccepted'] as bool?,
+      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+    );
+  }
+
+  GameMoment _gameMomentFromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data();
+    return GameMoment(
+      id: doc.id,
+      gameId: doc.reference.parent.parent!.id,
+      playerId: data['playerId'] as String? ?? '',
+      type: GameMomentType.values.byName(data['type'] as String? ?? 'roundEnded'),
+      round: (data['round'] as num?)?.toInt() ?? 1,
+      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+    );
+  }
+
+  /// Wraps [stream], mapping a `permission-denied` [FirebaseException] to
+  /// an empty-list emission instead of a stream error — the Firestore
+  /// equivalent of `LocalGameRepository`'s "return an empty list for a
+  /// viewer this isn't readable to" contract (`watchMafiaThread`'s doc:
+  /// "Emits an empty list for any viewer who isn't a *current* mafia
+  /// member"), since here that's enforced by a rule denial rather than an
+  /// in-memory branch.
+  Stream<List<T>> _emptyOnPermissionDenied<T>(Stream<List<T>> stream) {
+    final controller = StreamController<List<T>>.broadcast();
+    final sub = stream.listen(
+      controller.add,
+      onError: (Object error, StackTrace stackTrace) {
+        if (error is FirebaseException && error.code == 'permission-denied') {
+          controller.add(const []);
+          return;
+        }
+        controller.addError(error, stackTrace);
+      },
+    );
+    controller.onCancel = () => sub.cancel();
+    return controller.stream;
+  }
+
   @override
   Stream<List<MafiaThreadEntry>> watchMafiaThread({
     required String gameId,
     required String viewerId,
-  }) =>
-      throw UnimplementedError();
+  }) {
+    return _emptyOnPermissionDenied(
+      _games.doc(gameId).collection('mafiaThread').snapshots().map(
+            (snap) => snap.docs.map(_mafiaThreadEntryFromDoc).toList(),
+          ),
+    );
+  }
 
   @override
   Future<void> proposeElimination({
@@ -298,47 +395,67 @@ class FirebaseGameRepository implements GameRepository {
     required String authorId,
     required String method,
     required String targetPlayerId,
-  }) =>
-      throw UnimplementedError();
+  }) async {
+    await _call('proposeElimination', {
+      'gameId': gameId,
+      'authorId': authorId,
+      'method': method,
+      'targetPlayerId': targetPlayerId,
+    });
+  }
 
   @override
   Future<void> acceptEliminationProposal({
     required String gameId,
     required String proposalId,
     required String playerId,
-  }) =>
-      throw UnimplementedError();
+  }) async {
+    await _call('acceptEliminationProposal', {
+      'gameId': gameId,
+      'proposalId': proposalId,
+      'playerId': playerId,
+    });
+  }
 
   @override
   Future<void> executeElimination({
     required String gameId,
     required String proposalId,
     required String playerId,
-  }) =>
-      throw UnimplementedError();
+  }) async {
+    await _call('executeElimination', {
+      'gameId': gameId,
+      'proposalId': proposalId,
+      'playerId': playerId,
+    });
+  }
 
   @override
   Future<bool> acknowledgeEliminationSignal({
     required String gameId,
     required String playerId,
-  }) =>
-      throw UnimplementedError();
+  }) async {
+    final result = await _call('acknowledgeEliminationSignal', {'gameId': gameId, 'playerId': playerId});
+    return result['accepted'] as bool? ?? false;
+  }
 
   @override
   Future<void> sendMafiaMessage({
     required String gameId,
     required String authorId,
     required String text,
-  }) =>
-      throw UnimplementedError();
+  }) async {
+    await _call('sendMafiaMessage', {'gameId': gameId, 'authorId': authorId, 'text': text});
+  }
 
   @override
   Future<void> setMemberActive({
     required String gameId,
     required String playerId,
     required bool isActive,
-  }) =>
-      throw UnimplementedError();
+  }) async {
+    await _call('setMemberActive', {'gameId': gameId, 'playerId': playerId, 'isActive': isActive});
+  }
 
   @override
   Future<void> logObservation({
@@ -346,33 +463,85 @@ class FirebaseGameRepository implements GameRepository {
     required String authorId,
     required String text,
     String? targetPlayerId,
-  }) =>
-      throw UnimplementedError();
+  }) async {
+    await _call('logObservation', {
+      'gameId': gameId,
+      'authorId': authorId,
+      'text': text,
+      'targetPlayerId': targetPlayerId,
+    });
+  }
 
   @override
   Stream<List<Observation>> watchObservations({
     required String gameId,
     required String viewerId,
-  }) =>
-      throw UnimplementedError();
+  }) {
+    return _emptyOnPermissionDenied(
+      _games.doc(gameId).collection('observations').snapshots().map(
+            (snap) => snap.docs.map(_observationFromDoc).toList(),
+          ),
+    );
+  }
 
   @override
   Future<void> castVote({
     required String gameId,
     required String voterId,
     required String targetPlayerId,
-  }) =>
-      throw UnimplementedError();
+  }) async {
+    await _call('castVote', {'gameId': gameId, 'voterId': voterId, 'targetPlayerId': targetPlayerId});
+  }
+
+  /// Reactively re-filters `votes` by the game's *current* round, since
+  /// the round advances over the life of this stream — mirrors
+  /// `LocalGameRepository.watchCurrentRoundVotes`, which recomputes off
+  /// both vote changes and game changes for the same reason.
+  @override
+  Stream<List<Vote>> watchCurrentRoundVotes(String gameId) {
+    final gameRef = _games.doc(gameId);
+    final controller = StreamController<List<Vote>>.broadcast();
+    QuerySnapshot<Map<String, dynamic>>? votesSnap;
+    int? currentRound;
+
+    void emit() {
+      final snap = votesSnap;
+      if (snap == null || currentRound == null) return;
+      controller.add(
+        snap.docs.map(_voteFromDoc).where((v) => v.round == currentRound).toList(),
+      );
+    }
+
+    final subs = <StreamSubscription>[
+      gameRef.snapshots().listen((snap) {
+        currentRound = (snap.data()?['currentRound'] as num?)?.toInt() ?? 1;
+        emit();
+      }, onError: controller.addError),
+      gameRef.collection('votes').snapshots().listen((snap) {
+        votesSnap = snap;
+        emit();
+      }, onError: controller.addError),
+    ];
+
+    controller.onCancel = () async {
+      for (final sub in subs) {
+        await sub.cancel();
+      }
+    };
+    return controller.stream;
+  }
 
   @override
-  Stream<List<Vote>> watchCurrentRoundVotes(String gameId) =>
-      throw UnimplementedError();
+  Stream<List<Vote>> watchVoteHistory(String gameId) {
+    return _games.doc(gameId).collection('votes').snapshots().map(
+          (snap) => snap.docs.map(_voteFromDoc).toList(),
+        );
+  }
 
   @override
-  Stream<List<Vote>> watchVoteHistory(String gameId) => throw UnimplementedError();
-
-  @override
-  Future<void> resolveVotesForDay(String gameId) => throw UnimplementedError();
+  Future<void> resolveVotesForDay(String gameId) async {
+    await _call('resolveVotesForDay', {'gameId': gameId});
+  }
 
   @override
   Future<void> proposeRecruitment({
@@ -380,58 +549,128 @@ class FirebaseGameRepository implements GameRepository {
     required String recruiterId,
     required String targetPlayerId,
     required String sign,
-  }) =>
-      throw UnimplementedError();
+  }) async {
+    await _call('proposeRecruitment', {
+      'gameId': gameId,
+      'recruiterId': recruiterId,
+      'targetPlayerId': targetPlayerId,
+      'sign': sign,
+    });
+  }
 
   @override
   Future<void> acceptRecruitmentProposal({
     required String gameId,
     required String proposalId,
     required String playerId,
-  }) =>
-      throw UnimplementedError();
+  }) async {
+    await _call('acceptRecruitmentProposal', {
+      'gameId': gameId,
+      'proposalId': proposalId,
+      'playerId': playerId,
+    });
+  }
 
   @override
   Future<void> executeRecruitment({
     required String gameId,
     required String proposalId,
     required String playerId,
-  }) =>
-      throw UnimplementedError();
+  }) async {
+    await _call('executeRecruitment', {
+      'gameId': gameId,
+      'proposalId': proposalId,
+      'playerId': playerId,
+    });
+  }
 
   @override
   Future<bool> respondToRecruitment({
     required String gameId,
     required String playerId,
     required bool accept,
-  }) =>
-      throw UnimplementedError();
+  }) async {
+    final result = await _call('respondToRecruitment', {
+      'gameId': gameId,
+      'playerId': playerId,
+      'accept': accept,
+    });
+    return result['accepted'] as bool? ?? false;
+  }
 
+  /// Plain rule-gated Firestore reads/writes, not Cloud Functions — per
+  /// implementation_plan.md's Cloud Functions inventory: "per-player
+  /// notification bookkeeping, not contested game state; a rule of
+  /// playerId == request.auth.uid is sufficient." Filters/sorts client-side
+  /// on a single equality read rather than a compound query, avoiding a
+  /// composite-index requirement for what's always a small, per-player
+  /// collection.
   @override
   Future<List<GameMoment>> fetchUnacknowledgedMoments({
     required String gameId,
     required String playerId,
-  }) =>
-      throw UnimplementedError();
+  }) async {
+    final snap = await _games
+        .doc(gameId)
+        .collection('moments')
+        .where('playerId', isEqualTo: playerId)
+        .get();
+    final moments = snap.docs
+        .where((doc) => doc.data()['acknowledged'] != true)
+        .map(_gameMomentFromDoc)
+        .toList()
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    return moments;
+  }
 
   @override
   Future<void> acknowledgeAllMoments({
     required String gameId,
     required String playerId,
-  }) =>
-      throw UnimplementedError();
+  }) async {
+    final snap = await _games
+        .doc(gameId)
+        .collection('moments')
+        .where('playerId', isEqualTo: playerId)
+        .get();
+    final batch = _db.batch();
+    for (final doc in snap.docs) {
+      if (doc.data()['acknowledged'] != true) {
+        batch.update(doc.reference, {'acknowledged': true});
+      }
+    }
+    await batch.commit();
+  }
 
   @override
   Future<List<GameMoment>> fetchAllMoments({
     required String gameId,
     required String playerId,
-  }) =>
-      throw UnimplementedError();
+  }) async {
+    final snap = await _games
+        .doc(gameId)
+        .collection('moments')
+        .where('playerId', isEqualTo: playerId)
+        .get();
+    final moments = snap.docs.map(_gameMomentFromDoc).toList()
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    return moments;
+  }
 
   @override
   Future<void> recordReentry({
     required String gameId,
     required String playerId,
-  }) =>
-      throw UnimplementedError();
+  }) async {
+    final gameRef = _games.doc(gameId);
+    final gameSnap = await gameRef.get();
+    final round = (gameSnap.data()?['currentRound'] as num?)?.toInt() ?? 1;
+    await gameRef.collection('moments').add({
+      'playerId': playerId,
+      'type': 'reenteredCase',
+      'round': round,
+      'createdAt': FieldValue.serverTimestamp(),
+      'acknowledged': false,
+    });
+  }
 }

@@ -93,6 +93,12 @@ async function main() {
     await db.collection(`games/${GAME_ID}/mafiaThread`).doc("entry1").set({ text: "coordinate here" });
     await db.collection(`games/${GAME_ID}/votes`).doc("vote1").set({ voterId: "villagerA" });
     await db.collection(`games/${GAME_ID}/observations`).doc("obs1").set({ text: "saw something" });
+    await db.collection(`games/${GAME_ID}/moments`).doc("moment1").set({
+      playerId: "villagerA",
+      type: "roundEnded",
+      round: 1,
+      acknowledged: false,
+    });
   });
 
   const villagerA = env.authenticatedContext("villagerA").firestore();
@@ -159,6 +165,40 @@ async function main() {
     assertFails(outsider.collection(`games/${GAME_ID}/observations`).get())
   );
 
+  // --- moments: strictly self-only, but a client CAN write its own ---
+  await check("player reads own moment: allowed", () =>
+    assertSucceeds(villagerA.doc(`games/${GAME_ID}/moments/moment1`).get())
+  );
+  await check("another player reads someone else's moment: DENIED", () =>
+    assertFails(mafiaB.doc(`games/${GAME_ID}/moments/moment1`).get())
+  );
+  await check("player acknowledges (updates) their own moment: allowed", () =>
+    assertSucceeds(villagerA.doc(`games/${GAME_ID}/moments/moment1`).update({ acknowledged: true }))
+  );
+  await check("player updates someone else's moment: DENIED", () =>
+    assertFails(mafiaB.doc(`games/${GAME_ID}/moments/moment1`).update({ acknowledged: true }))
+  );
+  await check("player creates their own moment (e.g. recordReentry): allowed", () =>
+    assertSucceeds(
+      villagerA.collection(`games/${GAME_ID}/moments`).add({
+        playerId: "villagerA",
+        type: "reenteredCase",
+        round: 1,
+        acknowledged: false,
+      })
+    )
+  );
+  await check("player creates a moment claiming to be someone else: DENIED", () =>
+    assertFails(
+      villagerA.collection(`games/${GAME_ID}/moments`).add({
+        playerId: "mafiaB",
+        type: "finaleWin",
+        round: 1,
+        acknowledged: false,
+      })
+    )
+  );
+
   // --- game doc: browsable by any signed-in user ---
   await check("outsider reads the game doc: allowed", () =>
     assertSucceeds(outsider.doc(`games/${GAME_ID}`).get())
@@ -194,6 +234,8 @@ async function main() {
       `games/${GAME_ID}`,
     ];
     await Promise.all(paths.map((p) => db.doc(p).delete()));
+    const momentsSnap = await db.collection(`games/${GAME_ID}/moments`).get();
+    await Promise.all(momentsSnap.docs.map((d) => d.ref.delete()));
   });
   await env.cleanup();
 

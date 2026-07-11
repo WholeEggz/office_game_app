@@ -88,6 +88,24 @@ service cloud.firestore {
         allow read: if isMember(gameId);
         allow write: if false;
       }
+
+      match /moments/{momentId} {
+        // Per-player notification bookkeeping, not contested game state —
+        // per implementation_plan.md's Cloud Functions inventory, "a rule
+        // of playerId == request.auth.uid is sufficient." Unlike every
+        // other subcollection above, this allows a *client* write: a
+        // player acknowledging their own moments (acknowledgeAllMoments)
+        // or recording their own reentry (recordReentry) doesn't decide
+        // any game truth, so it doesn't need to go through a Cloud
+        // Function the way vote/role/weight changes do. Game-truth
+        // functions (round resolution, elimination, recruitment, finale)
+        // still write moments too, via the Admin SDK bypass, same as
+        // everywhere else.
+        allow read: if isSelf(resource.data.playerId);
+        allow create: if isSelf(request.resource.data.playerId);
+        allow update: if isSelf(resource.data.playerId);
+        allow delete: if false;
+      }
     }
   }
 }

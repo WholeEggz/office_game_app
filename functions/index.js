@@ -4,39 +4,12 @@ const { getAuth } = require("firebase-admin/auth");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 
+const { STARTING_VOTE_WEIGHT, requireString, requirePositiveInt, requireAuth, shuffle } =
+  require("./lib/shared");
+
 initializeApp();
 
 const db = getFirestore();
-
-// Every villager's starting vote weight (concept doc §5) — mirrors
-// LocalGameRepository's `_startingVoteWeight`. Also the value forced onto
-// every other player's entry in publicPlayers, for the same reason
-// LocalGameRepository._publicView does it: a real, changing number would
-// leak "this player has been confirmed not mafia" the moment it first
-// drops, since only a non-mafia target ever loses weight (a mafia target
-// gets unmasked instead).
-const STARTING_VOTE_WEIGHT = 3;
-
-function requireString(value, field) {
-  if (typeof value !== "string" || value.trim() === "") {
-    throw new HttpsError("invalid-argument", `${field} is required.`);
-  }
-  return value;
-}
-
-function requirePositiveInt(value, field) {
-  if (!Number.isInteger(value) || value < 1) {
-    throw new HttpsError("invalid-argument", `${field} must be a positive integer.`);
-  }
-  return value;
-}
-
-function requireAuth(request) {
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "Sign in required.");
-  }
-  return request.auth;
-}
 
 function newPlayerDoc(name) {
   return {
@@ -51,16 +24,6 @@ function newPlayerDoc(name) {
     hasLeft: false,
     joinedAt: FieldValue.serverTimestamp(),
   };
-}
-
-// Fisher-Yates — used for the mafia draw, same as
-// LocalGameRepository._activateGame's `..shuffle(Random())`.
-function shuffle(items) {
-  for (let i = items.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [items[i], items[j]] = [items[j], items[i]];
-  }
-  return items;
 }
 
 // Draws roles the moment the roster reaches minPlayers — mirrors
@@ -92,10 +55,7 @@ async function maybeActivateGame(gameRef) {
 
 // createGame/addPlayer — checked against GameRepository's actual interface
 // (lib/domain/repositories/game_repository.dart), per implementation_plan.md's
-// Cloud Functions inventory. Anything that decides game truth (role draw,
-// name-uniqueness) must be server-side, never a direct client write — these
-// are the two Milestone 3 needs; the rest of the inventory lands in
-// Milestone 4.
+// Cloud Functions inventory.
 
 exports.createGame = onCall(async (request) => {
   requireAuth(request);
@@ -202,17 +162,12 @@ exports.addPlayer = onCall(async (request) => {
 // write:
 //   - publicPlayers/{playerId}: the redacted mirror everyone sees.
 //   - cellViews/{playerId}: this player's own cell-link role reveals,
-//     derived from their own recruiterId/recruitedPlayerIds. Nothing in
-//     Milestone 3 ever sets those fields (recruitment lands in Milestone
-//     4), so this is always `{}` for now — the mechanism is built and
-//     tested ahead of the feature that populates it.
-//
-// Known gap, deferred to Milestone 4: this only re-derives the *written*
-// player's own cellViews. When recruitment/unmasking start mutating
-// role/wasUnmasked, every viewer who has that player as a cell link also
-// needs their cellViews refreshed — this trigger doesn't yet fan out to
-// them. Not reachable in Milestone 3 since recruiterId/recruitedPlayerIds
-// are never set, but must be revisited before Milestone 4 ships.
+//     derived from their own recruiterId/recruitedPlayerIds — plus a
+//     fan-out to anyone who has *this* player as their own cell link
+//     (their recruiter, or anyone they recruited), since a role change
+//     here can make their cellViews stale too (e.g. a recruiter getting
+//     unmasked later needs their recruit's cellViews refreshed, not just
+//     their own).
 exports.syncPlayerViews = onDocumentWritten("games/{gameId}/players/{playerId}", async (event) => {
   const { gameId, playerId } = event.params;
   const gameRef = db.collection("games").doc(gameId);
@@ -241,6 +196,38 @@ exports.syncPlayerViews = onDocumentWritten("games/{gameId}/players/{playerId}",
     joinedAt: player.joinedAt,
   });
 
+  await recomputeCellView(gameRef, playerId, player);
+
+  // Fan out to anyone whose OWN cellViews depends on this player's role:
+  // their recruiter, or anyone they recruited. Without this, a recruit's
+  // cellViews would go stale the moment their recruiter is later caught
+  // and unmasked by a vote — the recruiter's own write only refreshes the
+  // recruiter's cellViews, not everyone who has the recruiter as a link.
+  const dependentSnaps = await Promise.all([
+    gameRef.collection("players").where("recruiterId", "==", playerId).get(),
+    gameRef.collection("players").where("recruitedPlayerIds", "array-contains", playerId).get(),
+  ]);
+  const dependentIds = new Set();
+  for (const snap of dependentSnaps) {
+    for (const doc of snap.docs) {
+      if (doc.id !== playerId) dependentIds.add(doc.id);
+    }
+  }
+  await Promise.all(
+    [...dependentIds].map(async (dependentId) => {
+      const dependentSnap = await gameRef.collection("players").doc(dependentId).get();
+      if (dependentSnap.exists) {
+        await recomputeCellView(gameRef, dependentId, dependentSnap.data());
+      }
+    })
+  );
+});
+
+// Recomputes cellViews/{playerId} from [player]'s own recruiterId/
+// recruitedPlayerIds — factored out so both the written player and any
+// dependent (their recruiter, or anyone they recruited) can be refreshed
+// with the same logic.
+async function recomputeCellView(gameRef, playerId, player) {
   const linkIds = [];
   if (player.recruiterId) linkIds.push(player.recruiterId);
   for (const id of player.recruitedPlayerIds || []) linkIds.push(id);
@@ -254,8 +241,8 @@ exports.syncPlayerViews = onDocumentWritten("games/{gameId}/players/{playerId}",
       if (snap.exists) knownRoles[snap.id] = snap.data().role;
     }
   }
-  await cellViewRef.set({ knownRoles });
-});
+  await gameRef.collection("cellViews").doc(playerId).set({ knownRoles });
+}
 
 // Debug-only identity minting for the role switcher (Phase 1a's "temporary
 // option to switch between users in different roles on one device"). Real
@@ -291,6 +278,8 @@ exports.debugMintTestUser = onCall(async (request) => {
   return { uid: user.uid, displayName: displayName.trim(), customToken };
 });
 
-// Callables land here in Milestone 4 — vote casting/resolution,
-// elimination/recruitment lifecycle, unmasking. See
-// implementation_plan.md's "Cloud Functions inventory" section.
+// Milestone 4: vote casting/resolution, elimination/recruitment
+// lifecycle, unmasking, leaveGame/setMemberActive/sendMafiaMessage/
+// logObservation. See implementation_plan.md's "Cloud Functions
+// inventory" section.
+Object.assign(exports, require("./lib/gameplay"));
