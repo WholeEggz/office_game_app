@@ -6,7 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import 'data/local/local_auth_service.dart';
+import 'data/firebase/firebase_auth_service.dart';
 import 'data/local/local_game_repository.dart';
 import 'design/theme.dart';
 import 'domain/repositories/auth_service.dart';
@@ -15,10 +15,10 @@ import 'firebase_options.dart';
 import 'ui/entry/entry_screen.dart';
 
 /// Firebase backend integration is being built behind the local
-/// implementations (see implementation_plan.md, Phase 1b). Until the DI
-/// seam swaps over, this just proves the app boots against the Local
-/// Emulator Suite; `LocalGameRepository`/`LocalAuthService` still drive
-/// the UI.
+/// implementation (see implementation_plan.md, Phase 1b). Milestone 2's
+/// auth vertical slice swaps AuthService to Firebase first;
+/// LocalGameRepository still drives game data until the Milestone 3
+/// redaction architecture and Milestone 4 Cloud Functions land.
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
@@ -48,7 +48,7 @@ class OfficeGameApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         Provider<GameRepository>(create: (_) => LocalGameRepository()),
-        Provider<AuthService>(create: (_) => LocalAuthService()),
+        Provider<AuthService>(create: (_) => FirebaseAuthService()),
       ],
       child: MaterialApp(
         title: 'Office Game',
