@@ -18,9 +18,12 @@ import '../../domain/repositories/auth_service.dart';
 /// It's reproduced via a debug-gated callable (`debugMintTestUser`,
 /// denied server-side for any build not pointed at the emulator) that
 /// mints a fresh test identity and a custom auth token.
-/// `registerNewPlayer` stores that token without signing in (matching
-/// `LocalAuthService`: registering a player doesn't change the current
-/// user); `switchToUser` exchanges the stored token via
+/// `registerNewPlayer` stores that token without signing in as *that*
+/// identity (matching `LocalAuthService`: registering a player doesn't
+/// change the current user) — though it does establish some throwaway
+/// anonymous session if none exists yet, since every other Cloud Function
+/// this app calls needs an authenticated caller and quick-start is often
+/// the first thing tapped. `switchToUser` exchanges the stored token via
 /// `signInWithCustomToken`.
 class FirebaseAuthService implements AuthService {
   FirebaseAuthService({fb.FirebaseAuth? auth, FirebaseFunctions? functions})
@@ -61,6 +64,17 @@ class FirebaseAuthService implements AuthService {
 
   @override
   Future<AppUser> registerNewPlayer(String displayName) async {
+    // The minted identity below is deliberately not signed into (see this
+    // class's doc comment), but every other Cloud Function this app calls
+    // (createGame, addPlayer, ...) requires *some* authenticated caller.
+    // If quick-start is the first thing tapped on a fresh launch, nothing
+    // has signed in yet — without this, the createGame call right after
+    // this one gets rejected as unauthenticated. A throwaway anonymous
+    // session is enough; it's never the identity anything switches to.
+    if (_auth.currentUser == null) {
+      await _auth.signInAnonymously();
+    }
+
     final callable = _functions.httpsCallable('debugMintTestUser');
     final result = await callable.call<Map<String, dynamic>>({'displayName': displayName});
     final uid = result.data['uid'] as String;
