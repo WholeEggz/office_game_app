@@ -30,6 +30,11 @@ class _CaseCreationScreenState extends State<CaseCreationScreen> {
   final _villagersController = TextEditingController(text: '6');
   final _mafiaCountController = TextEditingController(text: '2');
   final _dailyCutoffController = TextEditingController(text: '17:00');
+  // Blank, not pre-filled — a hint shows an example instead, since this is
+  // the creator's own flavor text, not a numeric setting with one obvious
+  // default. Optional: shown to a prospective player before they join, but
+  // blank is a normal case, not an error.
+  final _rulesController = TextEditingController();
 
   @override
   void initState() {
@@ -50,6 +55,7 @@ class _CaseCreationScreenState extends State<CaseCreationScreen> {
     _villagersController.dispose();
     _mafiaCountController.dispose();
     _dailyCutoffController.dispose();
+    _rulesController.dispose();
     super.dispose();
   }
 
@@ -136,6 +142,7 @@ class _CaseCreationScreenState extends State<CaseCreationScreen> {
       recruitmentUnlockThreshold: _recruitmentUnlockThreshold(),
       executionWindow: const Duration(hours: 1),
       dailyCutoffTime: _parseDailyCutoff(_dailyCutoffController.text),
+      rulesDescription: _rulesController.text.trim(),
     );
     if (!mounted) return;
     Navigator.of(context).pushReplacement(MaterialPageRoute(
@@ -183,6 +190,22 @@ class _CaseCreationScreenState extends State<CaseCreationScreen> {
                   Text(
                     "Votes resolve on their own at this time each day — "
                     'no one needs to press anything.',
+                    style: AppTypography.dataSmall,
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  TextField(
+                    key: const ValueKey('case_rules_field'),
+                    controller: _rulesController,
+                    maxLines: 4,
+                    decoration: const InputDecoration(
+                      labelText: 'Case rules',
+                      hintText: 'e.g. players use real names and departments — or: '
+                          'identities are anonymous, figure it out yourself',
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    'Optional — shown to anyone browsing this case before they join.',
                     style: AppTypography.dataSmall,
                   ),
                   const SizedBox(height: AppSpacing.lg),

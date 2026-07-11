@@ -20,6 +20,14 @@ class Game {
   final List<Player> players;
   final int currentRound;
 
+  /// Free text the creator writes at case creation describing this case's
+  /// own variant of the rules (e.g. "players use real names and
+  /// departments" vs. "identities are anonymous, figure it out yourself")
+  /// — shown to a prospective player before they join, alongside the
+  /// roster. Optional; blank is a normal, unremarkable value, not an
+  /// error state.
+  final String rulesDescription;
+
   /// How many mafia members are drawn at [status] transition to `active`
   /// — a direct target count, not a ratio, so it always lands exactly
   /// (clamped to at least 1 and at most the roster size at start —
@@ -92,6 +100,7 @@ class Game {
     required this.minPlayers,
     this.players = const [],
     this.currentRound = 1,
+    this.rulesDescription = '',
     this.mafiaCount = 1,
     this.recruitmentUnlockThreshold = 0.2,
     this.executionWindow = const Duration(hours: 1),
@@ -167,6 +176,7 @@ class Game {
       minPlayers: minPlayers,
       players: players ?? this.players,
       currentRound: currentRound ?? this.currentRound,
+      rulesDescription: rulesDescription,
       mafiaCount: mafiaCount,
       recruitmentUnlockThreshold: recruitmentUnlockThreshold,
       executionWindow: executionWindow,

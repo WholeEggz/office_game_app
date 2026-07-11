@@ -31,6 +31,7 @@ class FirebaseGameRepository implements GameRepository {
     double recruitmentUnlockThreshold = 0.2,
     Duration executionWindow = const Duration(hours: 1),
     Duration dailyCutoffTime = const Duration(hours: 17),
+    String rulesDescription = '',
   }) =>
       throw UnimplementedError();
 

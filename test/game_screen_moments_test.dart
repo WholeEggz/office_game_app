@@ -190,8 +190,11 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    // Join the existing case from the list.
+    // Tapping "Join" from the list opens the case details screen first;
+    // "Join this case" there is what actually joins.
     await tester.tap(find.text('Join'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Join this case'));
     await tester.pump();
     await tester.pump();
 

@@ -16,6 +16,9 @@ abstract class GameRepository {
   /// [executionWindow], and [dailyCutoffTime] default to the values in
   /// [Game]'s own constructor — a case creation screen can expose them as
   /// tunable settings, but no caller is required to think about them.
+  /// [rulesDescription] is the creator's own free-text description of this
+  /// case's variant of the rules (see [Game.rulesDescription]) — optional,
+  /// blank by default.
   Future<Game> createGame({
     required String locationTag,
     required int minPlayers,
@@ -25,6 +28,7 @@ abstract class GameRepository {
     double recruitmentUnlockThreshold = 0.2,
     Duration executionWindow = const Duration(hours: 1),
     Duration dailyCutoffTime = const Duration(hours: 17),
+    String rulesDescription = '',
   });
 
   /// Adds a new player to the game, always as a villager at the standard

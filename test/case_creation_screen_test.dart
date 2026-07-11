@@ -9,6 +9,7 @@ void main() {
   Finder villagersField() => find.byKey(const ValueKey('roster_villagers_field'));
   Finder mafiaField() => find.byKey(const ValueKey('roster_mafia_field'));
   Finder cutoffField() => find.byKey(const ValueKey('daily_cutoff_field'));
+  Finder rulesField() => find.byKey(const ValueKey('case_rules_field'));
 
   String textAt(WidgetTester tester, String key) =>
       tester.widget<Text>(find.byKey(ValueKey(key))).data!;
@@ -259,5 +260,50 @@ void main() {
     await tester.enterText(cutoffField(), '25:99');
     await tester.pump();
     expect(find.textContaining('Use HH:mm'), findsOneWidget);
+  });
+
+  testWidgets('the case rules field starts blank with an example hint, and is optional',
+      (tester) async {
+    final repo = LocalGameRepository();
+    await tester.pumpWidget(Provider<GameRepository>.value(
+      value: repo,
+      child: const MaterialApp(
+        home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
+      ),
+    ));
+
+    expect(tester.widget<TextField>(rulesField()).controller!.text, isEmpty);
+    expect(find.textContaining('e.g. players use real names'), findsOneWidget);
+
+    // Blank is fine — creating the case doesn't require typing anything.
+    await tester.ensureVisible(find.text('Open the case'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Open the case'));
+    await tester.pumpAndSettle();
+
+    final games = await repo.watchGames(viewerId: 'p1').first;
+    expect(games.single.rulesDescription, isEmpty);
+  });
+
+  testWidgets('typed case rules text is passed through to the created case', (tester) async {
+    final repo = LocalGameRepository();
+    await tester.pumpWidget(Provider<GameRepository>.value(
+      value: repo,
+      child: const MaterialApp(
+        home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
+      ),
+    ));
+
+    await tester.enterText(rulesField(), 'Identities are anonymous — figure it out yourself.');
+    await tester.ensureVisible(find.text('Open the case'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Open the case'));
+    await tester.pumpAndSettle();
+
+    final games = await repo.watchGames(viewerId: 'p1').first;
+    expect(
+      games.single.rulesDescription,
+      'Identities are anonymous — figure it out yourself.',
+    );
   });
 }

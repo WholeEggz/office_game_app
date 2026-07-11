@@ -15,6 +15,7 @@ import '../game/game_screen.dart';
 import '../help/help_screen.dart';
 import '../stats/track_record_screen.dart';
 import 'case_creation_screen.dart';
+import 'case_details_screen.dart';
 
 /// The real player's path: register once, then find and join a game from
 /// the list — no jumping between identities like the tester flow does.
@@ -44,7 +45,13 @@ class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
     setState(() => _user = user);
   }
 
-  Future<void> _joinAndEnter(Game game) async {
+  /// [replace] swaps the current route for `GameScreen` instead of
+  /// pushing on top of it — used when this is called from
+  /// `CaseDetailsScreen`, so that screen's own frame doesn't linger on
+  /// the back stack once you're actually in the case (back from
+  /// `GameScreen` should return straight to "Find your case", the same
+  /// as the direct "Enter" path below does).
+  Future<void> _joinAndEnter(Game game, {bool replace = false}) async {
     final user = _user!;
     final repo = context.read<GameRepository>();
     final alreadyJoined = game.players.any((p) => p.id == user.id);
@@ -60,14 +67,26 @@ class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
       await repo.recordReentry(gameId: game.id, playerId: user.id);
     }
     if (!mounted) return;
-    Navigator.of(context).push(MaterialPageRoute(
+    final route = MaterialPageRoute(
       builder: (_) => GameScreen(gameId: game.id, playerId: user.id),
-    ));
+    );
+    if (replace) {
+      Navigator.of(context).pushReplacement(route);
+    } else {
+      Navigator.of(context).push(route);
+    }
   }
 
   void _startNewCase() {
     Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => CaseCreationScreen(creator: _user!),
+    ));
+  }
+
+  void _openDetails(Game game) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) =>
+          CaseDetailsScreen(game: game, onJoin: () => _joinAndEnter(game, replace: true)),
     ));
   }
 
@@ -145,7 +164,17 @@ class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
               Text('No cases open yet.', style: AppTypography.bodySmall)
             else
               for (final game in games) ...[
-                _GameListTile(game: game, selfId: user.id, onTap: () => _joinAndEnter(game)),
+                _GameListTile(
+                  game: game,
+                  selfId: user.id,
+                  // Already-joined cases still go straight back in
+                  // (unchanged — TESTING.md §0.9); a case you haven't
+                  // joined opens its details screen first instead of
+                  // joining immediately.
+                  onTap: game.players.any((p) => p.id == user.id)
+                      ? () => _joinAndEnter(game)
+                      : () => _openDetails(game),
+                ),
                 const SizedBox(height: AppSpacing.sm),
               ],
             const SizedBox(height: AppSpacing.xl),
@@ -193,7 +222,8 @@ class _GameListTile extends StatelessWidget {
                 Text(game.locationTag, style: AppTypography.heading),
                 const SizedBox(height: AppSpacing.xs),
                 Text(
-                  '${game.status.name} · ${game.players.length}/${game.minPlayers} players',
+                  '${game.status.name} · round ${game.currentRound} · '
+                  '${game.players.length}/${game.minPlayers} players',
                   style: AppTypography.bodySmall,
                 ),
               ],

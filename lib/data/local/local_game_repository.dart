@@ -220,6 +220,7 @@ class LocalGameRepository implements GameRepository {
     double recruitmentUnlockThreshold = 0.2,
     Duration executionWindow = const Duration(hours: 1),
     Duration dailyCutoffTime = const Duration(hours: 17),
+    String rulesDescription = '',
   }) async {
     final creator = Player(
       id: creatorId,
@@ -232,6 +233,7 @@ class LocalGameRepository implements GameRepository {
       locationTag: locationTag,
       minPlayers: minPlayers,
       players: [creator],
+      rulesDescription: rulesDescription,
       mafiaCount: mafiaCount,
       recruitmentUnlockThreshold: recruitmentUnlockThreshold,
       executionWindow: executionWindow,

@@ -53,4 +53,34 @@ void main() {
     final seenSelf = ownView.single.players.firstWhere((p) => p.id == self.id);
     expect(seenSelf.role, self.role);
   });
+
+  test('rulesDescription round-trips through createGame and survives later mutations',
+      () async {
+    final repo = LocalGameRepository();
+    final game = await repo.createGame(
+      locationTag: 'Third Floor',
+      minPlayers: 4,
+      creatorId: 'p1',
+      creatorName: 'Alice',
+      rulesDescription: 'Players use real names and departments.',
+    );
+    expect(game.rulesDescription, 'Players use real names and departments.');
+
+    // A later mutation (a second player joining, which goes through
+    // Game.copyWith) must not silently reset it back to blank.
+    await repo.addPlayer(gameId: game.id, playerId: 'p2', name: 'Bob');
+    final afterJoin = await repo.watchGame(game.id).first;
+    expect(afterJoin.rulesDescription, 'Players use real names and departments.');
+  });
+
+  test('createGame defaults rulesDescription to blank when not provided', () async {
+    final repo = LocalGameRepository();
+    final game = await repo.createGame(
+      locationTag: 'Third Floor',
+      minPlayers: 4,
+      creatorId: 'p1',
+      creatorName: 'Alice',
+    );
+    expect(game.rulesDescription, isEmpty);
+  });
 }

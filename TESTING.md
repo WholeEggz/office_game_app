@@ -26,13 +26,13 @@ to add 8+ names to reach the mafia-count / recruitment tests.
 | 0.2 | Tap "Continue as tester" | Opens the debug role switcher (§1) |
 | 0.3 | Go back, tap "Continue as a player" instead | "Who are you?" form: a name field, "Continue" button |
 | 0.4 | Leave name blank, tap "Continue" | Nothing happens (no-op on empty name) |
-| 0.5 | Enter a name, tap "Continue" | "Find your case" list appears: "Signed in as <name>", any existing cases (name, status, player count, Join/Enter button), "No cases open yet." if none exist, and a "Start a new case" button at the bottom |
+| 0.5 | Enter a name, tap "Continue" | "Find your case" list appears: "Signed in as <name>", any existing cases (name, status, round number, player count, Join/Enter button), "No cases open yet." if none exist, and a "Start a new case" button at the bottom |
 | 0.6 | Tap "Start a new case" | Opens the case creation screen (§0b) |
-| 0.7 | After creating a case (§0b) or having someone else create one, go back to "Find your case" | The new case now appears in the list with a "Join" button (you haven't joined it yet) |
-| 0.8 | Tap "Join" on a case you're not in | You're added to its roster, then land straight in your own `GameScreen` (role-reveal ceremony plays) |
-| 0.9 | Go back to "Find your case" for a case you already joined | Its button now reads "Enter" instead of "Join" — tapping it re-enters your existing `GameScreen` without calling join again |
+| 0.7 | After creating a case (§0b) or having someone else create one, go back to "Find your case" | The new case now appears in the list with a "Join" button (you haven't joined it yet), caption reading e.g. "recruiting · round 1 · 1/8 players" |
+| 0.8 | Tap "Join" on a case you're not in | Opens the case details screen (§0c) instead of joining immediately — nothing is added to the roster yet |
+| 0.9 | Go back to "Find your case" for a case you already joined | Its button now reads "Enter" instead of "Join" — tapping it goes straight back into your existing `GameScreen`, skipping the details screen and without calling join again |
 | 0.10 | With two cases open, check that each only lists players who joined *that* case | No cross-contamination between cases in the list's player counts |
-| 0.11 | Create a case with villagers = 3, mafia = 1 (§0b, for 4 total players), then join it as 3 more distinct players (through "Find your case" → "Join", not the tester flow) until the roster reaches 4 | The instant the 4th player joins, the game flips to `active` on its own — no "Start the game" button exists anywhere in this flow, and none of the 4 needed to do anything beyond joining. Re-enter as each player: at least one is mafia, not all 4 villagers (regression test — this used to silently never start, since only the tester flow's manual button triggered role assignment) |
+| 0.11 | Create a case with villagers = 3, mafia = 1 (§0b, for 4 total players), then join it as 3 more distinct players (through "Find your case" → "Join" → "Join this case" on the details screen, not the tester flow) until the roster reaches 4 | The instant the 4th player joins, the game flips to `active` on its own — no "Start the game" button exists anywhere in this flow, and none of the 4 needed to do anything beyond joining. Re-enter as each player: at least one is mafia, not all 4 villagers (regression test — this used to silently never start, since only the tester flow's manual button triggered role assignment) |
 
 ---
 
@@ -75,6 +75,23 @@ settings later — not yet.)
 | 0b.10 | Type something non-numeric into "villagers" or "mafia" (e.g. "abc") | A red "Enter a number" line appears under that field live. "Open the case" is still tappable — the roster preview and the case itself fall back the same way they always did (§0b.4), just with a visible warning now |
 | 0b.11 | Fix an invalid field back to a valid value | Its warning line disappears immediately, no need to re-open the screen |
 | 0b.12 | Leave every field at its default (6 villagers, 2 mafia, 17:00 cutoff) and create a case | 8 players total; 2 mafia among them; recruitment unlock threshold computed as 2/6 ≈ 0.33 (this case's own starting split); 1-hour execution window; 17:00 daily cutoff |
+| 0b.13 | Scroll to "Case rules" | A blank multi-line field with a hint showing an example ("e.g. players use real names and departments — or: identities are anonymous, figure it out yourself"), and a caption noting it's shown to anyone browsing before they join |
+| 0b.14 | Type your own rules text (e.g. "Everyone uses their real name and department") and create the case | Someone browsing "Find your case" and opening this case's details (§0c) sees exactly that text under "Case rules" |
+| 0b.15 | Leave "Case rules" blank and create the case | Case creation isn't blocked — same never-blocks stance as every other field here; the details screen (§0c.2) shows its own fallback line instead |
+
+---
+
+## 0c. Case details screen (before you join)
+
+Reached by tapping "Join" on a case you haven't joined yet (§0.8) — review before committing, rather than joining instantly. Uses the same redacted snapshot "Find your case" already has (no real mafia roles ever visible here, same as the list itself).
+
+| # | Steps | Expected |
+|---|---|---|
+| 0c.1 | Open details for a case whose creator wrote rules text (§0b.14) | Location tag and "status · round N · X/Y players" header, a "Case rules" card showing that text, a "Players so far" card listing every joined player's name, and a "Join this case" button |
+| 0c.2 | Open details for a case whose creator left "Case rules" blank (§0b.15) | The card instead reads "No rules noted for this case." — not empty, not an error |
+| 0c.3 | Tap "Join this case" | You're added to the roster, then land in your own `GameScreen` (role-reveal ceremony plays) — same end result as the old direct-join, just one screen later |
+| 0c.4 | From inside that `GameScreen`, dismiss the role-reveal ceremony and any moment dialogs, then tap the back button once | Returns directly to "Find your case", not back to the details screen you already passed through |
+| 0c.5 | Open details for a case that has already ended, that you never joined | No "Join this case" button — a plain "This case is closed." line instead, matching the list's own "Closed" state |
 
 ---
 
