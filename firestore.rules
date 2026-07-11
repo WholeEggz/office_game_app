@@ -1,0 +1,12 @@
+rules_version = '2';
+
+// Deny-all placeholder. The real redaction-aware rules (true-doc /
+// publicPlayers mirror / cellViews split) land in Phase 1b Milestone 3 —
+// see implementation_plan.md's "highest-risk technical piece" section.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
