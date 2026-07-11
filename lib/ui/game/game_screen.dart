@@ -22,6 +22,7 @@ import '../common/noir_copy.dart';
 import '../common/role_badge.dart';
 import '../common/vote_weight_pill.dart';
 import '../help/help_screen.dart';
+import '../stats/track_record_screen.dart';
 import 'moment_dialog.dart';
 
 /// Runs a repository action that may throw a [StateError] from a race
@@ -865,6 +866,11 @@ class _DashboardState extends State<_Dashboard> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
             child: Center(child: VoteWeightPill(weight: self.voteWeight)),
+          ),
+          IconButton(
+            icon: Icon(PhosphorIconsLight.chartBar, color: AppColors.textSecondary),
+            tooltip: 'Track record',
+            onPressed: () => openTrackRecord(context, viewerId: self.id, viewerName: self.name),
           ),
           IconButton(
             icon: Icon(PhosphorIconsLight.bookOpenText, color: AppColors.textSecondary),

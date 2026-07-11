@@ -293,6 +293,16 @@ abstract class GameRepository {
     required String playerId,
   });
 
+  /// Every [GameMoment] ever recorded for [playerId] in this game,
+  /// acknowledged or not, oldest first — unlike
+  /// [fetchUnacknowledgedMoments], acknowledging never removes anything
+  /// from this. Powers the cross-case track record screen, which needs a
+  /// player's full history rather than just what they haven't seen yet.
+  Future<List<GameMoment>> fetchAllMoments({
+    required String gameId,
+    required String playerId,
+  });
+
   /// Records a [GameMomentType.reenteredCase] moment — call when a player
   /// opens a case they've already joined (as opposed to [addPlayer] or
   /// [createGame], which record [GameMomentType.joinedCase] for a first

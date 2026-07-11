@@ -874,6 +874,21 @@ class LocalGameRepository implements GameRepository {
       }
     }
 
+    // Every mafia member who made it through this round without being the
+    // one caught — feeds the track record's survived-as-mafia count and
+    // streak. `p.id == winnerId` is excluded explicitly: when the winning
+    // target *was* mafia, they're deliberately left out of
+    // `notifiedThisRound` above (the UNMASKED ceremony covers them instead
+    // of a moment), so without this check they'd still read as
+    // `role == mafia, wasUnmasked == false` here and wrongly get credited
+    // with surviving the very round they were caught in.
+    for (final p in game.players) {
+      if (record.notifiedThisRound.contains(p.id) || p.id == winnerId) continue;
+      if (p.role == PlayerRole.mafia && !p.wasUnmasked && !p.hasLeft) {
+        _recordMoment(record, p.id, GameMomentType.survivedRoundAsMafia, currentRound);
+      }
+    }
+
     // The generic fallback: everyone still in the game who didn't already
     // get something more specific this round, so a round never passes
     // with zero acknowledgement for anyone.
@@ -1136,6 +1151,15 @@ class LocalGameRepository implements GameRepository {
         record.acknowledgedMomentIds.add(m.id);
       }
     }
+  }
+
+  @override
+  Future<List<GameMoment>> fetchAllMoments({
+    required String gameId,
+    required String playerId,
+  }) async {
+    final record = _record(gameId);
+    return record.moments.where((m) => m.playerId == playerId).toList();
   }
 
   @override

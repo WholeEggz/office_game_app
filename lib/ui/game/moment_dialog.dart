@@ -99,6 +99,13 @@ _MomentCopy _copyFor(GameMomentType type, int round) {
         icon: PhosphorIconsLight.arrowUUpLeft,
         tone: _MomentTone.informational,
       );
+    case GameMomentType.survivedRoundAsMafia:
+      return (
+        title: 'Still in the shadows',
+        body: 'Round $round: no one caught you this round.',
+        icon: PhosphorIconsLight.maskHappy,
+        tone: _MomentTone.informational,
+      );
     case GameMomentType.roundEnded:
       return (
         title: 'Round $round has ended',

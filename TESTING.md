@@ -362,6 +362,33 @@ eleven moment types, since the stamp already covers it.
 
 ---
 
+## 15. Track record (cross-case stats)
+
+A "bar chart" icon next to "How to play" — in both "Find your case" (before
+joining anything) and inside an active case's `GameScreen` — opens Track
+Record for the current identity. It aggregates across every case that
+identity has ever joined, not just the one you opened it from: correct
+unmasks, votes cast, vote accuracy, current streak, cases played (split
+Witness/Informant), cases closed (won/lost), and times survived as an
+Informant. All four headline stats and the streak reuse data the app
+already tracks (moments, votes, roles) — no new game rule, just a new lens
+on existing history. It's a snapshot, not a live stream: use the refresh
+icon (top right) to pick up anything that happened elsewhere since it
+opened.
+
+| # | Steps | Expected |
+|---|---|---|
+| 15.1 | Register a fresh identity and open Track Record before joining any case | "Your record", "<name> · every case leaves a trail.", and "Nothing on file yet — this fills in once your first case's first round resolves." — no stat tiles or case history |
+| 15.2 | As a villager, vote for the Informant who ends up unmasked that round, then reopen Track Record | "Correct unmasks" and "Vote accuracy" both read 1 / 100%, "Current streak" reads 1 |
+| 15.3 | As a still-uncaught mafia member, let a round resolve with nobody voting for you | Re-entering shows a quiet "Still in the shadows" moment dialog (no haptic) instead of the generic "Round N has ended" — and Track Record's "Current streak" ticks up by one for that round even though you never cast a vote |
+| 15.4 | Vote for a plain villager instead of the round's actual Informant, then reopen Track Record | "Vote accuracy" drops below 100%, and "Current streak" resets to 0 |
+| 15.5 | Join a second, separate case with the same identity (same name, same device) and play at least one round in it | "Cases played" increases, and every other number (correct unmasks, votes cast, streak) aggregates across *both* cases — not just the one you most recently opened Track Record from |
+| 15.6 | Play a case to completion (§12) where you were mafia and never personally unmasked | "Survived as Informant" increases by 1, and "Cases closed" reflects your side's actual win/loss — a win counts even if your side won by other means, as long as you personally were never caught |
+| 15.7 | Play a case to completion where you were mafia but got unmasked partway through | "Survived as Informant" does *not* count that case — "Cases played (... as Informant)" still does, since you were an Informant for part of it |
+| 15.8 | Cast a vote or trigger a round resolution in another tab/identity, then tap the refresh icon on an already-open Track Record screen (don't leave and re-enter) | Numbers update to the latest state without needing to close and reopen the screen |
+
+---
+
 ## Known Phase-1a limitations (not bugs)
 
 - State is in-memory only — refreshing the page resets everything.
@@ -379,3 +406,6 @@ eleven moment types, since the stamp already covers it.
   (`SystemSoundType.click`) — a plain platform click, not a custom fanfare
   or chime. A distinct sound identity would mean adding a real audio
   package and sound-effect assets, which hasn't happened yet.
+- Track Record (§15) is a snapshot computed when it opens, not a live
+  stream — a stat changing elsewhere while it's already open needs the
+  refresh icon (or a close/reopen) to show up.

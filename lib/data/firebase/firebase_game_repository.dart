@@ -202,6 +202,13 @@ class FirebaseGameRepository implements GameRepository {
       throw UnimplementedError();
 
   @override
+  Future<List<GameMoment>> fetchAllMoments({
+    required String gameId,
+    required String playerId,
+  }) =>
+      throw UnimplementedError();
+
+  @override
   Future<void> recordReentry({
     required String gameId,
     required String playerId,

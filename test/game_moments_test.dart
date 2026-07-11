@@ -105,7 +105,9 @@ void main() {
     expect(targetMoments.single.type, GameMomentType.roundEnded);
   });
 
-  test('a round with nothing specific to report gives everyone the roundEnded fallback',
+  test(
+      'a round with nothing specific to report gives villagers the roundEnded '
+      'fallback, and gives the still-uncaught mafia member survivedRoundAsMafia instead',
       () async {
     final repo = LocalGameRepository();
     final game = await repo.createGame(
@@ -117,22 +119,32 @@ void main() {
     for (var i = 2; i <= 4; i++) {
       await repo.addPlayer(gameId: game.id, playerId: 'p$i', name: 'Player $i');
     }
-    await _ackAll(repo, game.id, ['p1', 'p2', 'p3', 'p4']);
+    final started = await repo.watchGame(game.id).first;
+    await _ackAll(repo, game.id, started.players.map((p) => p.id));
 
     // No votes cast at all this round.
     await repo.resolveVotesForDay(game.id);
 
-    for (final id in ['p1', 'p2', 'p3', 'p4']) {
-      final moments = await repo.fetchUnacknowledgedMoments(gameId: game.id, playerId: id);
+    for (final villager in started.villagers) {
+      final moments =
+          await repo.fetchUnacknowledgedMoments(gameId: game.id, playerId: villager.id);
       expect(moments, hasLength(1));
       expect(moments.single.type, GameMomentType.roundEnded);
       expect(moments.single.round, 1);
     }
+
+    final mafiaMember = started.mafia.single;
+    final mafiaMoments =
+        await repo.fetchUnacknowledgedMoments(gameId: game.id, playerId: mafiaMember.id);
+    expect(mafiaMoments, hasLength(1));
+    expect(mafiaMoments.single.type, GameMomentType.survivedRoundAsMafia);
+    expect(mafiaMoments.single.round, 1);
   });
 
   test(
-      'villagers mistakenly voting out one of their own targets that villager, '
-      'and only them — everyone else gets the roundEnded fallback', () async {
+      'villagers mistakenly voting out one of their own targets that villager, and only '
+      'them — other villagers get the roundEnded fallback, the still-uncaught mafia '
+      'member gets survivedRoundAsMafia', () async {
     final repo = LocalGameRepository();
     final game = await repo.createGame(
       locationTag: 'Test Office',
@@ -157,12 +169,18 @@ void main() {
     expect(targetMoments, hasLength(1));
     expect(targetMoments.single.type, GameMomentType.targetedByVillagers);
 
-    for (final voter in started.players.where((p) => p.id != target.id)) {
+    for (final voter in started.villagers.where((p) => p.id != target.id)) {
       final moments =
           await repo.fetchUnacknowledgedMoments(gameId: game.id, playerId: voter.id);
       expect(moments, hasLength(1));
       expect(moments.single.type, GameMomentType.roundEnded);
     }
+
+    final mafiaMember = started.mafia.single;
+    final mafiaMoments =
+        await repo.fetchUnacknowledgedMoments(gameId: game.id, playerId: mafiaMember.id);
+    expect(mafiaMoments, hasLength(1));
+    expect(mafiaMoments.single.type, GameMomentType.survivedRoundAsMafia);
   });
 
   test(
