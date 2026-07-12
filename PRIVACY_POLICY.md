@@ -1,6 +1,6 @@
 # Privacy Policy — Office Game
 
-*Last updated: [DATE]*
+*Last updated: July 12, 2026*
 
 Office Game ("the app," "we," "us") is a social deduction game for coworkers, played on your phone. This policy explains what information the app collects, how it's used, and your choices.
 
@@ -47,12 +47,10 @@ If we materially change what we collect or how we use it, we'll update this page
 
 ## Contact us
 
-Questions about this policy or your data: **[CONTACT EMAIL]**
+Questions about this policy or your data: **contact@ultralearner.app**
 
 ---
 
 *Template notes for whoever's finalizing this (delete before publishing):*
-- *Fill in the `[DATE]` and `[CONTACT EMAIL]` placeholders above.*
-- *Both the App Store and Google Play require this policy to be hosted at a public URL (not just bundled in the app) before you can submit a build — GitHub Pages, Firebase Hosting, or a single static page anywhere reachable all work fine.*
 - *If a later version adds phone/email sign-in, real analytics, or push notifications, this document needs a corresponding update — it should always describe what the shipped build actually does, not what's planned.*
 - *This is drafted as a reasonable good-faith policy for a small pilot, not reviewed by a lawyer. Given the app handles real coworkers' names and in-game accusations, it's worth a quick pass by counsel before a wide public launch, even if a solo/pilot TestFlight release is fine to ship with this as-is.*
