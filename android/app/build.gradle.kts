@@ -11,7 +11,12 @@ plugins {
 android {
     namespace = "com.officegame.office_game_app"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    // Flutter's own default (26.3.x) is older than what the Firebase
+    // plugins (cloud_firestore, cloud_functions, firebase_auth,
+    // firebase_core, path_provider_android) declare needing — mismatched
+    // NDK versions are backward-compatible per Flutter's own build
+    // warning, but pinning the highest one avoids the warning entirely.
+    ndkVersion = "27.0.12077973"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -27,7 +32,9 @@ android {
         applicationId = "com.officegame.office_game_app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // Flutter's own default (21) is below what cloud_functions
+        // requires (23) — the manifest merge fails below that.
+        minSdk = 23
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
