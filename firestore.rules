@@ -1,0 +1,125 @@
+rules_version = '2';
+
+// The redaction architecture from implementation_plan.md's "highest-risk
+// technical piece" section: Firestore rules are a binary allow/deny on a
+// whole document, not a per-viewer field transform, so LocalGameRepository's
+// per-viewer role redaction (_publicView/_visiblePlayers) is reproduced as
+// three separate collections instead of one:
+//   - players/{playerId}      the true doc — self-only, Cloud Functions write
+//   - publicPlayers/{playerId} a redacted mirror kept in sync by a trigger
+//   - cellViews/{viewerId}     the viewer's own cell-link role reveals
+//
+// All writes everywhere below are Cloud-Functions-only: the Admin SDK
+// bypasses these rules entirely, so `allow write: if false` blocks direct
+// client writes without blocking the functions that actually mutate state.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(playerId) {
+      return isSignedIn() && request.auth.uid == playerId;
+    }
+
+    function isMember(gameId) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/games/$(gameId)/players/$(request.auth.uid));
+    }
+
+    function isCurrentMafia(gameId) {
+      let doc = get(/databases/$(database)/documents/games/$(gameId)/players/$(request.auth.uid));
+      return isSignedIn() && doc.data.role == 'mafia' && doc.data.wasUnmasked == false;
+    }
+
+    match /games/{gameId} {
+      // Browsable by any signed-in user, even before joining — the doc's
+      // own fields are already public-by-design (concept doc §6: the
+      // elimination/recruitment method/sign forewarnings are method-only,
+      // never-the-target), so no redaction is needed here.
+      allow read: if isSignedIn();
+      allow write: if false;
+
+      match /players/{playerId} {
+        allow read: if isSelf(playerId);
+        allow write: if false;
+      }
+
+      match /publicPlayers/{playerId} {
+        // Deliberately not membership-gated, unlike the other subcollections
+        // below: CaseDetailsScreen shows a game's roster before joining
+        // (PlayerEntryScreen -> "find your case" -> case details), and this
+        // is safe to leave open because it's already the redacted view —
+        // role forced to villager and vote weight forced to the starting
+        // value unless the player was actually unmasked. No membership
+        // check is needed to protect something that's already public.
+        allow read: if isSignedIn();
+        allow write: if false;
+      }
+
+      match /cellViews/{viewerId} {
+        // Genuinely sensitive — reveals real roles behind a viewer's own
+        // cell-structure links (design pillar #4) — so unlike publicPlayers
+        // this is strictly self-only.
+        allow read: if isSelf(viewerId);
+        allow write: if false;
+      }
+
+      match /mafiaThread/{entryId} {
+        // A binary gate a rule *can* express directly, unlike per-viewer
+        // redaction: mafia or not, checked against the requester's own true
+        // player doc. An unmasked member loses this the instant they flip.
+        allow read: if isCurrentMafia(gameId);
+        allow write: if false;
+      }
+
+      match /votes/{voteId} {
+        // Not secret per the concept doc — voting history is permanent and
+        // visible to everyone in the game — just member-gated, not redacted.
+        allow read: if isMember(gameId);
+        allow write: if false;
+      }
+
+      match /observations/{observationId} {
+        // Ephemeral (purged after 3 rounds by a scheduled function, not
+        // just filtered on read) but not role-gated — same member-only
+        // treatment as votes.
+        allow read: if isMember(gameId);
+        allow write: if false;
+      }
+
+      match /moments/{momentId} {
+        // Per-player notification bookkeeping, not contested game state —
+        // per implementation_plan.md's Cloud Functions inventory, "a rule
+        // of playerId == request.auth.uid is sufficient." Unlike every
+        // other subcollection above, this allows a *client* write: a
+        // player acknowledging their own moments (acknowledgeAllMoments)
+        // or recording their own reentry (recordReentry) doesn't decide
+        // any game truth, so it doesn't need to go through a Cloud
+        // Function the way vote/role/weight changes do. Game-truth
+        // functions (round resolution, elimination, recruitment, finale)
+        // still write moments too, via the Admin SDK bypass, same as
+        // everywhere else.
+        allow read: if isSelf(resource.data.playerId);
+        allow create: if isSelf(request.resource.data.playerId);
+        allow update: if isSelf(resource.data.playerId);
+        allow delete: if false;
+      }
+
+      match /debugRoster/{playerId} {
+        // The debug role switcher's full-roster view (real roles) has no
+        // safe general answer under this redaction architecture — so
+        // unlike every other collection here, this one's *write* side
+        // (the syncPlayerViews trigger, see functions/index.js) is gated
+        // to only fire when FUNCTIONS_EMULATOR is set, never in a real
+        // deployment. That's what actually protects this: in production
+        // the collection is simply never populated, so member-gating the
+        // read side is defense in depth, not the primary control. Don't
+        // reuse this collection for anything the write-gate doesn't cover.
+        allow read: if isMember(gameId);
+        allow write: if false;
+      }
+    }
+  }
+}

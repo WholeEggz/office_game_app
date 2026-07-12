@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "811376211324",
+    "project_id": "officegameapp",
+    "storage_bucket": "officegameapp.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:811376211324:android:c5374ca3359e65bbb1a0f9",
+        "android_client_info": {
+          "package_name": "com.officegame.office_game_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAEValzm70j0cth1u-Kq4aFdEMRZx9UCyg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -45,5 +45,20 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<!-- The Firebase Local Emulator Suite (auth/firestore/functions, see
+		     main.dart's _useFirebaseEmulators) is reached over plain http://
+		     to localhost, which App Transport Security blocks by default —
+		     without this, every Firebase SDK call to the emulator fails with
+		     a vague, generic error (firebase_auth/internal-error,
+		     firebase_functions/unknown) instead of a clear network error,
+		     since ATS blocks the connection before the SDK's own error
+		     handling ever sees why. Debug-only in spirit (the emulator only
+		     exists in kDebugMode), but ATS config can't be conditioned on
+		     that at build time the way the Dart code is. -->
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 </dict>
 </plist>
