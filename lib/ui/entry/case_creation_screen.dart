@@ -133,21 +133,27 @@ class _CaseCreationScreenState extends State<CaseCreationScreen> {
   Future<void> _create() async {
     final repo = context.read<GameRepository>();
     final roster = _expectedRoster();
-    final game = await repo.createGame(
-      locationTag: _nameController.text.trim().isEmpty ? 'The Office' : _nameController.text.trim(),
-      minPlayers: roster.total,
-      creatorId: widget.creator.id,
-      creatorName: widget.creator.displayName,
-      mafiaCount: roster.mafia,
-      recruitmentUnlockThreshold: _recruitmentUnlockThreshold(),
-      executionWindow: const Duration(hours: 1),
-      dailyCutoffTime: _parseDailyCutoff(_dailyCutoffController.text),
-      rulesDescription: _rulesController.text.trim(),
-    );
-    if (!mounted) return;
-    Navigator.of(context).pushReplacement(MaterialPageRoute(
-      builder: (_) => GameScreen(gameId: game.id, playerId: widget.creator.id),
-    ));
+    try {
+      final game = await repo.createGame(
+        locationTag:
+            _nameController.text.trim().isEmpty ? 'The Office' : _nameController.text.trim(),
+        minPlayers: roster.total,
+        creatorId: widget.creator.id,
+        creatorName: widget.creator.displayName,
+        mafiaCount: roster.mafia,
+        recruitmentUnlockThreshold: _recruitmentUnlockThreshold(),
+        executionWindow: const Duration(hours: 1),
+        dailyCutoffTime: _parseDailyCutoff(_dailyCutoffController.text),
+        rulesDescription: _rulesController.text.trim(),
+      );
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(MaterialPageRoute(
+        builder: (_) => GameScreen(gameId: game.id, playerId: widget.creator.id),
+      ));
+    } on StateError catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
   }
 
   @override
