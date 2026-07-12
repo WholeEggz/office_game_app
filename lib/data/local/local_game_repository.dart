@@ -222,6 +222,16 @@ class LocalGameRepository implements GameRepository {
     Duration dailyCutoffTime = const Duration(hours: 17),
     String rulesDescription = '',
   }) async {
+    // A case name can be reused once the earlier case with that name has
+    // ended, but two simultaneously open cases sharing a name would be
+    // ambiguous in "Find your case" — same case/whitespace-insensitive
+    // collision rule as player names within a single roster.
+    final normalizedTag = locationTag.trim().toLowerCase();
+    final nameTaken = _games.values.any((r) =>
+        r.game.status != GameStatus.ended && r.game.locationTag.trim().toLowerCase() == normalizedTag);
+    if (nameTaken) {
+      throw StateError('A case named "$locationTag" is already open — choose a different name.');
+    }
     final creator = Player(
       id: creatorId,
       name: creatorName,

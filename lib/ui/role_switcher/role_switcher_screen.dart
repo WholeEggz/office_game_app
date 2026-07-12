@@ -72,6 +72,9 @@ class _RoleSwitcherScreenState extends State<RoleSwitcherScreen> {
       );
       if (!mounted) return;
       setState(() => _gameId = game.id);
+    } on StateError catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)

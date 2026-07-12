@@ -83,13 +83,31 @@ exports.createGame = onCall(async (request) => {
     ? data.dailyCutoffSeconds
     : 17 * 3600;
   const rulesDescription = typeof data.rulesDescription === "string" ? data.rulesDescription : "";
+  // A case name can be reused once the earlier case with that name has
+  // ended, but two simultaneously open cases sharing a name would be
+  // ambiguous in "Find your case" — mirrors LocalGameRepository.createGame's
+  // case/whitespace-insensitive collision rule. Firestore queries are
+  // case-sensitive, so the normalized form is stored alongside the real
+  // locationTag purely for this lookup.
+  const locationTagNormalized = locationTag.trim().toLowerCase();
 
   const gameRef = db.collection("games").doc();
   const playerRef = gameRef.collection("players").doc(creatorId);
 
   await db.runTransaction(async (tx) => {
+    const clashSnap = await tx.get(
+      db.collection("games").where("locationTagNormalized", "==", locationTagNormalized)
+    );
+    const nameTaken = clashSnap.docs.some((doc) => doc.data().status !== "ended");
+    if (nameTaken) {
+      throw new HttpsError(
+        "already-exists",
+        `A case named "${locationTag}" is already open — choose a different name.`
+      );
+    }
     tx.set(gameRef, {
       locationTag,
+      locationTagNormalized,
       status: "recruiting",
       minPlayers,
       currentRound: 1,
