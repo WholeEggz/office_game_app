@@ -114,10 +114,17 @@ service cloud.firestore {
         // (the syncPlayerViews trigger, see functions/index.js) is gated
         // to only fire when FUNCTIONS_EMULATOR is set, never in a real
         // deployment. That's what actually protects this: in production
-        // the collection is simply never populated, so member-gating the
-        // read side is defense in depth, not the primary control. Don't
-        // reuse this collection for anything the write-gate doesn't cover.
-        allow read: if isMember(gameId);
+        // the collection is simply never populated, so gating the read
+        // side at all is defense in depth, not the primary control — same
+        // reasoning as publicPlayers below. Deliberately not member-gated
+        // (unlike this reasoning's first draft): the tester operating the
+        // role switcher is a separate identity from every minted
+        // quick-start player (registerNewPlayer never switches the
+        // current session, matching LocalAuthService), so they're never
+        // actually a member of the game whose roster they need to see.
+        // Don't reuse this collection for anything the write-gate doesn't
+        // cover.
+        allow read: if isSignedIn();
         allow write: if false;
       }
     }

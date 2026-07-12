@@ -26,6 +26,16 @@ class RoleSwitcherScreen extends StatefulWidget {
 
 class _RoleSwitcherScreenState extends State<RoleSwitcherScreen> {
   String? _gameId;
+  // Created once, alongside _gameId, and reused for the lifetime of the
+  // roster view — calling repo.watchGame(...) directly inside build()
+  // (as this used to) hands StreamBuilder a brand-new stream every
+  // rebuild, tearing down and recreating the underlying Firestore
+  // listener each time. That races the listener's first snapshot: any
+  // rebuild before it arrives (of which there are several right after
+  // quick-start/create finish) cancels it before it can ever deliver
+  // data, which can spin the loading state forever. See GameScreen's
+  // matching comment on _playersStream et al.
+  Stream<Game>? _gameStream;
 
   final _locationController = TextEditingController(text: 'Third Floor');
   final _minPlayersController = TextEditingController(text: '8');
@@ -71,7 +81,10 @@ class _RoleSwitcherScreenState extends State<RoleSwitcherScreen> {
         creatorName: user.displayName,
       );
       if (!mounted) return;
-      setState(() => _gameId = game.id);
+      setState(() {
+        _gameId = game.id;
+        _gameStream = repo.watchGame(game.id);
+      });
     } on StateError catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
@@ -92,7 +105,12 @@ class _RoleSwitcherScreenState extends State<RoleSwitcherScreen> {
       // joined this game" when the same stock roster got reused elsewhere.
       final creator = await auth.registerNewPlayer(_quickStartNames.first);
       final game = await repo.createGame(
-        locationTag: 'Third Floor',
+        // Same field "Open the case" uses, not a hardcoded name — a
+        // fixed name collided with itself on every second quick-start
+        // once case names had to be unique among open cases (see
+        // createGame's "already open" rejection).
+        locationTag:
+            _locationController.text.trim().isEmpty ? 'The Office' : _locationController.text.trim(),
         minPlayers: _quickStartNames.length,
         creatorId: creator.id,
         creatorName: creator.displayName,
@@ -108,7 +126,10 @@ class _RoleSwitcherScreenState extends State<RoleSwitcherScreen> {
       }
       await repo.startGame(game.id);
       if (!mounted) return;
-      setState(() => _gameId = game.id);
+      setState(() {
+        _gameId = game.id;
+        _gameStream = repo.watchGame(game.id);
+      });
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -222,7 +243,7 @@ class _RoleSwitcherScreenState extends State<RoleSwitcherScreen> {
   Widget _buildRoster() {
     final repo = context.watch<GameRepository>();
     return StreamBuilder<Game>(
-      stream: repo.watchGame(_gameId!),
+      stream: _gameStream,
       builder: (context, snapshot) {
         final game = snapshot.data;
         if (game == null) {

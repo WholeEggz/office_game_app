@@ -145,14 +145,22 @@ async function main() {
     assertFails(villagerA.doc(`games/${GAME_ID}/cellViews/mafiaB`).get())
   );
 
-  // --- debugRoster: member-gated read (real safety is the write-side
-  // emulator gate in functions/index.js — this collection is empty in a
-  // real deployment regardless of who can technically query it) ---
+  // --- debugRoster: any signed-in user can read (real safety is the
+  // write-side emulator gate in functions/index.js — this collection is
+  // empty in a real deployment regardless of who can technically query
+  // it). Deliberately not member-gated: the tester operating the debug
+  // role switcher is never actually a member of a quick-started game
+  // (registerNewPlayer never switches the current session), so a
+  // member-only rule made the roster view permanently empty for exactly
+  // the flow it exists for. ---
   await check("member reads debugRoster: allowed", () =>
     assertSucceeds(villagerA.doc(`games/${GAME_ID}/debugRoster/mafiaB`).get())
   );
-  await check("non-member reads debugRoster: DENIED", () =>
-    assertFails(outsider.doc(`games/${GAME_ID}/debugRoster/mafiaB`).get())
+  await check("non-member (but signed in) reads debugRoster: allowed", () =>
+    assertSucceeds(outsider.doc(`games/${GAME_ID}/debugRoster/mafiaB`).get())
+  );
+  await check("unauthenticated reads debugRoster: DENIED", () =>
+    assertFails(anon.doc(`games/${GAME_ID}/debugRoster/mafiaB`).get())
   );
   await check("client cannot write debugRoster directly: DENIED", () =>
     assertFails(mafiaB.doc(`games/${GAME_ID}/debugRoster/mafiaB`).update({ role: "villager" }))
