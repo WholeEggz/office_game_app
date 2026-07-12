@@ -1,0 +1,23 @@
+<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Full-bleed background — app icons must be fully opaque (no
+       transparency) and fill the whole canvas; the OS applies its own
+       corner-rounding mask on top. -->
+  <rect x="0" y="0" width="1024" height="1024" fill="#15120E"/>
+
+  <!-- Adapted from assets/graphics/app_mark_seal_eye.svg for icon use:
+       dropped the faint secondary ring and thinned the 8 hairline
+       compass ticks down to 4 bold cardinal ones — neither would
+       survive shrinking to a 20-40px launcher icon. Margins widened
+       (ring at 72% of canvas width vs. the original mark's 96%) so
+       content isn't clipped by aggressive icon masks (circle/squircle
+       launcher themes, iOS's rounded-square mask). -->
+  <circle cx="512" cy="512" r="370" fill="none" stroke="#C9A227" stroke-width="24"/>
+  <g stroke="#C9A227" stroke-width="18" stroke-linecap="round">
+    <line x1="512" y1="142" x2="512" y2="182"/>
+    <line x1="512" y1="842" x2="512" y2="882"/>
+    <line x1="142" y1="512" x2="182" y2="512"/>
+    <line x1="842" y1="512" x2="882" y2="512"/>
+  </g>
+  <path d="M262,512 Q512,338 762,512 Q512,686 262,512 Z" fill="none" stroke="#C9A227" stroke-width="20"/>
+  <circle cx="512" cy="512" r="54" fill="#C9A227"/>
+</svg>

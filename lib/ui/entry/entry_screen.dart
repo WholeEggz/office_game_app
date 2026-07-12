@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -63,28 +64,36 @@ class EntryScreen extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(height: AppSpacing.lg),
-            DossierCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text('Tester', style: AppTypography.heading),
-                  const SizedBox(height: AppSpacing.xs),
-                  Text(
-                    'One device, several identities — switch between players to test '
-                    'the rules before this runs on separate phones.',
-                    style: AppTypography.bodySmall,
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  OutlinedButton(
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const RoleSwitcherScreen()),
+            // Previously shown unconditionally — a real release build
+            // would have let any player reach the debug role switcher
+            // (mint arbitrary identities, quick-start games, and, in
+            // Local backend mode, see everyone's real role with no
+            // redaction at all). Gated behind kDebugMode like every
+            // other debug-only affordance in this app.
+            if (kDebugMode) ...[
+              const SizedBox(height: AppSpacing.lg),
+              DossierCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text('Tester', style: AppTypography.heading),
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      'One device, several identities — switch between players to test '
+                      'the rules before this runs on separate phones.',
+                      style: AppTypography.bodySmall,
                     ),
-                    child: const Text('Continue as tester'),
-                  ),
-                ],
+                    const SizedBox(height: AppSpacing.md),
+                    OutlinedButton(
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const RoleSwitcherScreen()),
+                      ),
+                      child: const Text('Continue as tester'),
+                    ),
+                  ],
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),

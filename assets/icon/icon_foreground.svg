@@ -1,0 +1,18 @@
+<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Android adaptive-icon foreground layer: transparent background
+       (the background color is supplied separately as a plain color
+       resource), emblem scaled down further than icon_master.svg so it
+       stays within the adaptive icon's ~66%-diameter safe zone —
+       launchers are free to mask this layer with a circle, squircle,
+       or rounded square, and anything outside the safe zone risks
+       being clipped depending on which shape a given launcher uses. -->
+  <circle cx="512" cy="512" r="300" fill="none" stroke="#C9A227" stroke-width="20"/>
+  <g stroke="#C9A227" stroke-width="15" stroke-linecap="round">
+    <line x1="512" y1="212" x2="512" y2="242"/>
+    <line x1="512" y1="782" x2="512" y2="812"/>
+    <line x1="212" y1="512" x2="242" y2="512"/>
+    <line x1="782" y1="512" x2="812" y2="512"/>
+  </g>
+  <path d="M312,512 Q512,375 712,512 Q512,649 312,512 Z" fill="none" stroke="#C9A227" stroke-width="17"/>
+  <circle cx="512" cy="512" r="44" fill="#C9A227"/>
+</svg>

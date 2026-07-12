@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -934,27 +935,33 @@ class _DashboardState extends State<_Dashboard> {
                 '${game.locationTag} · round ${game.currentRound} · ${game.status.name}',
                 style: AppTypography.dataSmall,
               ),
-              const SizedBox(height: AppSpacing.md),
-              // Debug-only: bypasses the repository's role redaction
-              // locally so a solo playtester can check everyone's real
-              // role without switching over to the tester flow. A real
-              // deployment would drop this control entirely, same as the
-              // "Resolve today's votes (debug)" button below.
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                dense: true,
-                activeColor: AppColors.crimson,
-                value: _revealRoles,
-                onChanged: (value) => setState(() => _revealRoles = value),
-                title: Text(
-                  'Reveal roles (debug)',
-                  style: AppTypography.bodySmall.copyWith(color: AppColors.crimsonText),
+              // Both debug-only controls below were previously rendered
+              // unconditionally in every build — a real release would
+              // have let any player flip a switch to see every hidden
+              // role, or manually force a round to resolve early. Now
+              // gated behind kDebugMode, matching main.dart's existing
+              // pattern for the same class of dev-only affordance.
+              if (kDebugMode) ...[
+                const SizedBox(height: AppSpacing.md),
+                // Bypasses the repository's role redaction locally so a
+                // solo playtester can check everyone's real role without
+                // switching over to the tester flow.
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  activeColor: AppColors.crimson,
+                  value: _revealRoles,
+                  onChanged: (value) => setState(() => _revealRoles = value),
+                  title: Text(
+                    'Reveal roles (debug)',
+                    style: AppTypography.bodySmall.copyWith(color: AppColors.crimsonText),
+                  ),
+                  subtitle: Text(
+                    'Temporary, for testing only — real players never see this.',
+                    style: AppTypography.dataSmall,
+                  ),
                 ),
-                subtitle: Text(
-                  'Temporary, for testing only — real players never see this.',
-                  style: AppTypography.dataSmall,
-                ),
-              ),
+              ],
               const SizedBox(height: AppSpacing.sm),
               // Every section below gets a stable Key. Without one, an
               // unkeyed list matches children by position — when a
@@ -1043,14 +1050,16 @@ class _DashboardState extends State<_Dashboard> {
                   textAlign: TextAlign.center,
                 ),
               ),
-              const SizedBox(height: AppSpacing.sm),
-              Center(
-                key: const ValueKey('resolve_button'),
-                child: OutlinedButton(
-                  onPressed: () => _runGuarded(context, () => repo.resolveVotesForDay(gameId)),
-                  child: const Text("Resolve today's votes (debug)"),
+              if (kDebugMode) ...[
+                const SizedBox(height: AppSpacing.sm),
+                Center(
+                  key: const ValueKey('resolve_button'),
+                  child: OutlinedButton(
+                    onPressed: () => _runGuarded(context, () => repo.resolveVotesForDay(gameId)),
+                    child: const Text("Resolve today's votes (debug)"),
+                  ),
                 ),
-              ),
+              ],
             ],
           );
         },
