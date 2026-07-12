@@ -91,6 +91,90 @@ Future<void> _confirmLeave(
   await _runGuarded(context, () => repo.leaveGame(gameId: gameId, playerId: playerId));
 }
 
+/// Prompts for a reason, then calls [GameRepository.reportPlayer] — shared
+/// by the roster (reporting a player generally) and the observation log
+/// (reporting a specific entry, [observationId] set). Recorded for later
+/// review; doesn't hide anything on its own — pairs with blocking (see the
+/// roster's Block/Unblock menu item) for an immediate effect.
+Future<void> _showReportDialog(
+  BuildContext context, {
+  required GameRepository repo,
+  required String gameId,
+  required String reporterId,
+  required String targetPlayerId,
+  required String targetName,
+  String? observationId,
+}) async {
+  final reason = await showDialog<String>(
+    context: context,
+    builder: (dialogContext) => _ReportDialog(targetName: targetName),
+  );
+  if (reason == null || reason.isEmpty) return;
+  if (!context.mounted) return;
+  await _runGuarded(
+    context,
+    () => repo.reportPlayer(
+      gameId: gameId,
+      reporterId: reporterId,
+      targetPlayerId: targetPlayerId,
+      reason: reason,
+      observationId: observationId,
+    ),
+  );
+  if (!context.mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('Report submitted.')),
+  );
+}
+
+/// The report-reason prompt's content, as its own `State` so the
+/// [TextEditingController] is disposed when this widget is actually removed
+/// from the tree (i.e. once the dialog's dismiss animation finishes) rather
+/// than the instant `showDialog` returns — disposing it eagerly races that
+/// animation, since the still-closing dialog can rebuild the TextField
+/// against an already-disposed controller and crash.
+class _ReportDialog extends StatefulWidget {
+  final String targetName;
+
+  const _ReportDialog({required this.targetName});
+
+  @override
+  State<_ReportDialog> createState() => _ReportDialogState();
+}
+
+class _ReportDialogState extends State<_ReportDialog> {
+  final _reasonController = TextEditingController();
+
+  @override
+  void dispose() {
+    _reasonController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Report ${widget.targetName}'),
+      content: TextField(
+        controller: _reasonController,
+        autofocus: true,
+        maxLines: 3,
+        decoration: const InputDecoration(hintText: 'What happened?'),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(_reasonController.text.trim()),
+          child: const Text('Submit'),
+        ),
+      ],
+    );
+  }
+}
+
 /// A single player's own view into a running game — everything here is
 /// scoped to `playerId` via `GameRepository`'s redacted streams, never the
 /// full roster (that's `RoleSwitcherScreen`'s debug-only job).
@@ -122,6 +206,7 @@ class _GameScreenState extends State<GameScreen> {
   late final Stream<List<Observation>> _observationsStream;
   late final Stream<List<Vote>> _votesStream;
   late final Stream<List<Vote>> _voteHistoryStream;
+  late final Stream<Set<String>> _blockedPlayerIdsStream;
 
   @override
   void initState() {
@@ -146,6 +231,9 @@ class _GameScreenState extends State<GameScreen> {
         .asBroadcastStream();
     _votesStream = repo.watchCurrentRoundVotes(widget.gameId).asBroadcastStream();
     _voteHistoryStream = repo.watchVoteHistory(widget.gameId).asBroadcastStream();
+    _blockedPlayerIdsStream = repo
+        .watchBlockedPlayerIds(gameId: widget.gameId, viewerId: widget.playerId)
+        .asBroadcastStream();
   }
 
   void _trackUnmasking(Player self) {
@@ -262,6 +350,7 @@ class _GameScreenState extends State<GameScreen> {
           observationsStream: _observationsStream,
           votesStream: _votesStream,
           voteHistoryStream: _voteHistoryStream,
+          blockedPlayerIdsStream: _blockedPlayerIdsStream,
         );
       },
     );
@@ -841,6 +930,7 @@ class _Dashboard extends StatefulWidget {
   final Stream<List<Observation>> observationsStream;
   final Stream<List<Vote>> votesStream;
   final Stream<List<Vote>> voteHistoryStream;
+  final Stream<Set<String>> blockedPlayerIdsStream;
 
   const _Dashboard({
     required this.gameId,
@@ -851,6 +941,7 @@ class _Dashboard extends StatefulWidget {
     required this.observationsStream,
     required this.votesStream,
     required this.voteHistoryStream,
+    required this.blockedPlayerIdsStream,
   });
 
   @override
@@ -1020,6 +1111,7 @@ class _DashboardState extends State<_Dashboard> {
                   votesStream: widget.votesStream,
                   revealRoles: _revealRoles,
                   realRolesById: realRolesById,
+                  blockedPlayerIdsStream: widget.blockedPlayerIdsStream,
                 ),
               ),
               Padding(
@@ -1039,6 +1131,7 @@ class _DashboardState extends State<_Dashboard> {
                   self: self,
                   players: players,
                   observationsStream: widget.observationsStream,
+                  blockedPlayerIdsStream: widget.blockedPlayerIdsStream,
                 ),
               ),
               Center(
@@ -1075,6 +1168,7 @@ class _PlayerRosterSection extends StatelessWidget {
   final Stream<List<Vote>> votesStream;
   final bool revealRoles;
   final Map<String, PlayerRole> realRolesById;
+  final Stream<Set<String>> blockedPlayerIdsStream;
 
   const _PlayerRosterSection({
     required this.gameId,
@@ -1083,6 +1177,7 @@ class _PlayerRosterSection extends StatelessWidget {
     required this.votesStream,
     required this.revealRoles,
     required this.realRolesById,
+    required this.blockedPlayerIdsStream,
   });
 
   String _nameFor(String playerId) {
@@ -1159,79 +1254,152 @@ class _PlayerRosterSection extends StatelessWidget {
                       ),
                   const SizedBox(height: AppSpacing.xs),
                   const Divider(color: AppColors.borderHairline, height: AppSpacing.lg),
-                  for (final player in players)
-                    Container(
-                      decoration: BoxDecoration(
-                        color: myVoteTargetId == player.id ? AppColors.brassSoft : null,
-                        border: const Border(bottom: BorderSide(color: AppColors.borderHairline)),
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        vertical: AppSpacing.sm,
-                        horizontal: AppSpacing.xs,
-                      ),
-                      child: Row(
+                  // Blocked state only ever changes the Report/Block menu's
+                  // own label below — it's the viewer's own preference,
+                  // never game truth, so it doesn't touch voting or
+                  // anything else about this list (see watchBlockedPlayerIds'
+                  // doc comment).
+                  StreamBuilder<Set<String>>(
+                    stream: blockedPlayerIdsStream,
+                    builder: (context, blockedSnapshot) {
+                      final blockedIds = blockedSnapshot.data ?? const <String>{};
+                      return Column(
                         children: [
-                          if (myVoteTargetId == player.id)
-                            Padding(
-                              padding: const EdgeInsets.only(right: AppSpacing.xs),
-                              child: Icon(PhosphorIconsLight.checkCircle,
-                                  size: 16, color: AppColors.brass),
-                            ),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  [
-                                    player.id == self.id ? '${player.name} (you)' : player.name,
-                                    if (player.hasLeft) '(left)',
-                                  ].join(' '),
-                                  style: AppTypography.body.copyWith(
-                                    color: player.hasLeft
-                                        ? AppColors.textMuted
-                                        : myVoteTargetId == player.id
-                                            ? AppColors.brass
-                                            : AppColors.textPrimary,
-                                    fontWeight: myVoteTargetId == player.id
-                                        ? FontWeight.w600
-                                        : FontWeight.w400,
-                                  ),
-                                ),
-                                if (revealRoles)
-                                  Text(
-                                    (realRolesById[player.id] ?? PlayerRole.villager).name,
-                                    style: AppTypography.dataSmall.copyWith(
-                                      color: realRolesById[player.id] == PlayerRole.mafia
-                                          ? AppColors.crimsonText
-                                          : AppColors.textMuted,
+                          for (final player in players)
+                            Container(
+                              decoration: BoxDecoration(
+                                color: myVoteTargetId == player.id ? AppColors.brassSoft : null,
+                                border: const Border(
+                                    bottom: BorderSide(color: AppColors.borderHairline)),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                vertical: AppSpacing.sm,
+                                horizontal: AppSpacing.xs,
+                              ),
+                              child: Row(
+                                children: [
+                                  if (myVoteTargetId == player.id)
+                                    Padding(
+                                      padding: const EdgeInsets.only(right: AppSpacing.xs),
+                                      child: Icon(PhosphorIconsLight.checkCircle,
+                                          size: 16, color: AppColors.brass),
+                                    ),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          [
+                                            player.id == self.id
+                                                ? '${player.name} (you)'
+                                                : player.name,
+                                            if (player.hasLeft) '(left)',
+                                          ].join(' '),
+                                          style: AppTypography.body.copyWith(
+                                            color: player.hasLeft
+                                                ? AppColors.textMuted
+                                                : myVoteTargetId == player.id
+                                                    ? AppColors.brass
+                                                    : AppColors.textPrimary,
+                                            fontWeight: myVoteTargetId == player.id
+                                                ? FontWeight.w600
+                                                : FontWeight.w400,
+                                          ),
+                                        ),
+                                        if (revealRoles)
+                                          Text(
+                                            (realRolesById[player.id] ?? PlayerRole.villager).name,
+                                            style: AppTypography.dataSmall.copyWith(
+                                              color: realRolesById[player.id] == PlayerRole.mafia
+                                                  ? AppColors.crimsonText
+                                                  : AppColors.textMuted,
+                                            ),
+                                          ),
+                                      ],
                                     ),
                                   ),
-                              ],
-                            ),
-                          ),
-                          // Only self's weight is real (repository redacts
-                          // everyone else's to the starting value) — showing
-                          // a pill for other players would just be a
-                          // misleadingly constant "3" for everyone, so it's
-                          // dropped entirely rather than displayed as if
-                          // meaningful.
-                          if (player.id == self.id) VoteWeightPill(weight: player.voteWeight),
-                          const SizedBox(width: AppSpacing.sm),
-                          if (player.id != self.id && !player.hasLeft)
-                            TextButton(
-                              onPressed: () => _runGuarded(
-                                context,
-                                () => repo.castVote(
-                                  gameId: gameId,
-                                  voterId: self.id,
-                                  targetPlayerId: player.id,
-                                ),
+                                  // Only self's weight is real (repository
+                                  // redacts everyone else's to the starting
+                                  // value) — showing a pill for other
+                                  // players would just be a misleadingly
+                                  // constant "3" for everyone, so it's
+                                  // dropped entirely rather than displayed
+                                  // as if meaningful.
+                                  if (player.id == self.id)
+                                    VoteWeightPill(weight: player.voteWeight),
+                                  const SizedBox(width: AppSpacing.sm),
+                                  if (player.id != self.id && !player.hasLeft)
+                                    TextButton(
+                                      onPressed: () => _runGuarded(
+                                        context,
+                                        () => repo.castVote(
+                                          gameId: gameId,
+                                          voterId: self.id,
+                                          targetPlayerId: player.id,
+                                        ),
+                                      ),
+                                      child: Text(myVoteTargetId == player.id ? 'Voted' : 'Vote'),
+                                    ),
+                                  // Available regardless of hasLeft — you
+                                  // might still want to report or block
+                                  // someone after they've left the case.
+                                  if (player.id != self.id)
+                                    PopupMenuButton<String>(
+                                      icon: Icon(PhosphorIconsLight.dotsThreeVertical,
+                                          size: 18, color: AppColors.textSecondary),
+                                      tooltip: 'Report or block ${player.name}',
+                                      onSelected: (value) {
+                                        if (value == 'report') {
+                                          _showReportDialog(
+                                            context,
+                                            repo: repo,
+                                            gameId: gameId,
+                                            reporterId: self.id,
+                                            targetPlayerId: player.id,
+                                            targetName: player.name,
+                                          );
+                                        } else if (value == 'block') {
+                                          _runGuarded(
+                                            context,
+                                            () => repo.blockPlayer(
+                                              gameId: gameId,
+                                              viewerId: self.id,
+                                              blockedPlayerId: player.id,
+                                            ),
+                                          );
+                                        } else if (value == 'unblock') {
+                                          _runGuarded(
+                                            context,
+                                            () => repo.unblockPlayer(
+                                              gameId: gameId,
+                                              viewerId: self.id,
+                                              blockedPlayerId: player.id,
+                                            ),
+                                          );
+                                        }
+                                      },
+                                      itemBuilder: (context) => [
+                                        const PopupMenuItem(
+                                          value: 'report',
+                                          child: Text('Report'),
+                                        ),
+                                        PopupMenuItem(
+                                          value: blockedIds.contains(player.id)
+                                              ? 'unblock'
+                                              : 'block',
+                                          child: Text(blockedIds.contains(player.id)
+                                              ? 'Unblock'
+                                              : 'Block'),
+                                        ),
+                                      ],
+                                    ),
+                                ],
                               ),
-                              child: Text(myVoteTargetId == player.id ? 'Voted' : 'Vote'),
                             ),
                         ],
-                      ),
-                    ),
+                      );
+                    },
+                  ),
                 ],
               );
             },
@@ -1902,12 +2070,14 @@ class _ObservationSection extends StatefulWidget {
   final Player self;
   final List<Player> players;
   final Stream<List<Observation>> observationsStream;
+  final Stream<Set<String>> blockedPlayerIdsStream;
 
   const _ObservationSection({
     required this.gameId,
     required this.self,
     required this.players,
     required this.observationsStream,
+    required this.blockedPlayerIdsStream,
   });
 
   @override
@@ -1950,28 +2120,65 @@ class _ObservationSectionState extends State<_ObservationSection> {
             stream: widget.observationsStream,
             builder: (context, snapshot) {
               final observations = snapshot.data ?? const [];
-              if (observations.isEmpty) {
-                return Text('Nothing logged yet.', style: AppTypography.bodySmall);
-              }
-              return Column(
-                children: [
-                  // Oldest first, newest last — same convention as any
-                  // chat app, so the latest note sits right above the
-                  // composer below.
-                  for (final o in observations)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          o.targetPlayerId == null
-                              ? '${_nameFor(o.authorId)}: ${o.text}'
-                              : '${_nameFor(o.authorId)} about ${_nameFor(o.targetPlayerId!)}: ${o.text}',
-                          style: AppTypography.bodySmall.copyWith(color: AppColors.textPrimary),
+              return StreamBuilder<Set<String>>(
+                stream: widget.blockedPlayerIdsStream,
+                builder: (context, blockedSnapshot) {
+                  final blockedIds = blockedSnapshot.data ?? const <String>{};
+                  final visible =
+                      observations.where((o) => !blockedIds.contains(o.authorId)).toList();
+                  if (visible.isEmpty) {
+                    return Text(
+                      observations.isEmpty
+                          ? 'Nothing logged yet.'
+                          : 'Nothing to show — every entry here is from a blocked player.',
+                      style: AppTypography.bodySmall,
+                    );
+                  }
+                  return Column(
+                    children: [
+                      // Oldest first, newest last — same convention as any
+                      // chat app, so the latest note sits right above the
+                      // composer below.
+                      for (final o in visible)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  o.targetPlayerId == null
+                                      ? '${_nameFor(o.authorId)}: ${o.text}'
+                                      : '${_nameFor(o.authorId)} about '
+                                          '${_nameFor(o.targetPlayerId!)}: ${o.text}',
+                                  style: AppTypography.bodySmall
+                                      .copyWith(color: AppColors.textPrimary),
+                                ),
+                              ),
+                              if (o.authorId != widget.self.id)
+                                IconButton(
+                                  icon: Icon(PhosphorIconsLight.flag,
+                                      size: 16, color: AppColors.textMuted),
+                                  tooltip: 'Report this entry',
+                                  visualDensity: VisualDensity.compact,
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(),
+                                  onPressed: () => _showReportDialog(
+                                    context,
+                                    repo: context.read<GameRepository>(),
+                                    gameId: widget.gameId,
+                                    reporterId: widget.self.id,
+                                    targetPlayerId: o.authorId,
+                                    targetName: _nameFor(o.authorId),
+                                    observationId: o.id,
+                                  ),
+                                ),
+                            ],
+                          ),
                         ),
-                      ),
-                    ),
-                ],
+                    ],
+                  );
+                },
               );
             },
           ),

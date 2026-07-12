@@ -467,18 +467,29 @@ class FirebaseGameRepository implements GameRepository {
   /// member"), since here that's enforced by a rule denial rather than an
   /// in-memory branch.
   Stream<List<T>> _emptyOnPermissionDenied<T>(Stream<List<T>> stream) {
-    final controller = StreamController<List<T>>.broadcast();
-    final sub = stream.listen(
-      controller.add,
-      onError: (Object error, StackTrace stackTrace) {
-        if (error is FirebaseException && error.code == 'permission-denied') {
-          controller.add(const []);
-          return;
-        }
-        controller.addError(error, stackTrace);
+    StreamSubscription<List<T>>? sub;
+    late final StreamController<List<T>> controller;
+    controller = StreamController<List<T>>.broadcast(
+      // Deferring the underlying listen() until this stream actually has a
+      // subscriber avoids a lost-event race: broadcast controllers don't
+      // buffer, so an eager listen() here could receive Firestore's initial
+      // snapshot (the already-existing docs) before the real consumer
+      // (e.g. a StreamBuilder built a frame later) ever subscribes,
+      // silently dropping it until the next unrelated write.
+      onListen: () {
+        sub = stream.listen(
+          controller.add,
+          onError: (Object error, StackTrace stackTrace) {
+            if (error is FirebaseException && error.code == 'permission-denied') {
+              controller.add(const []);
+              return;
+            }
+            controller.addError(error, stackTrace);
+          },
+        );
       },
+      onCancel: () => sub?.cancel(),
     );
-    controller.onCancel = () => sub.cancel();
     return controller.stream;
   }
 
@@ -776,6 +787,64 @@ class FirebaseGameRepository implements GameRepository {
       'round': round,
       'createdAt': FieldValue.serverTimestamp(),
       'acknowledged': false,
+    });
+  }
+
+  @override
+  Future<void> reportPlayer({
+    required String gameId,
+    required String reporterId,
+    required String targetPlayerId,
+    required String reason,
+    String? observationId,
+  }) async {
+    await _call('reportPlayer', {
+      'gameId': gameId,
+      'reporterId': reporterId,
+      'targetPlayerId': targetPlayerId,
+      'reason': reason,
+      if (observationId != null) 'observationId': observationId,
+    });
+  }
+
+  // blockPlayer/unblockPlayer/watchBlockedPlayerIds are direct client
+  // reads/writes, not Cloud Functions — see firestore.rules' `blocks`
+  // comment for why that's safe (a player's own preference, not game
+  // truth), matching the same reasoning moments already uses.
+
+  DocumentReference<Map<String, dynamic>> _blocksRef(String gameId, String viewerId) =>
+      _games.doc(gameId).collection('blocks').doc(viewerId);
+
+  @override
+  Future<void> blockPlayer({
+    required String gameId,
+    required String viewerId,
+    required String blockedPlayerId,
+  }) async {
+    await _blocksRef(gameId, viewerId).set({
+      'blockedPlayerIds': FieldValue.arrayUnion([blockedPlayerId]),
+    }, SetOptions(merge: true));
+  }
+
+  @override
+  Future<void> unblockPlayer({
+    required String gameId,
+    required String viewerId,
+    required String blockedPlayerId,
+  }) async {
+    await _blocksRef(gameId, viewerId).set({
+      'blockedPlayerIds': FieldValue.arrayRemove([blockedPlayerId]),
+    }, SetOptions(merge: true));
+  }
+
+  @override
+  Stream<Set<String>> watchBlockedPlayerIds({
+    required String gameId,
+    required String viewerId,
+  }) {
+    return _blocksRef(gameId, viewerId).snapshots().map((snap) {
+      final ids = (snap.data()?['blockedPlayerIds'] as List<dynamic>?) ?? const [];
+      return ids.cast<String>().toSet();
     });
   }
 }

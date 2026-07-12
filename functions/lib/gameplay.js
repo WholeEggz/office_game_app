@@ -694,3 +694,47 @@ exports.logObservation = onCall(async (request) => {
 
   return {};
 });
+
+// Deliberately not gated by requireGameNotEndedData, unlike every other
+// function in this file: reporting is a safety action, not a gameplay
+// action — there's no reason a case ending should stop someone from
+// reporting something they noticed right at the end. Writes to a
+// collection with no client read access (see firestore.rules) — there's
+// no in-app moderator view, this is reviewed externally. blockPlayer/
+// unblockPlayer (the other half of the moderation flow, App Store
+// Guideline 1.2) don't need a Cloud Function at all: they're a player's
+// own preference, not game truth, so FirebaseGameRepository writes
+// games/{gameId}/blocks/{viewerId} directly, the same way moments works.
+exports.reportPlayer = onCall(async (request) => {
+  requireAuth(request);
+  const data = request.data || {};
+  const gameId = requireString(data.gameId, "gameId");
+  const reporterId = requireString(data.reporterId, "reporterId");
+  const targetPlayerId = requireString(data.targetPlayerId, "targetPlayerId");
+  const reason = requireString(data.reason, "reason");
+  const observationId = typeof data.observationId === "string" ? data.observationId : null;
+  const gameRef = db.collection("games").doc(gameId);
+
+  const gameSnap = await gameRef.get();
+  if (!gameSnap.exists) throw new HttpsError("not-found", `Game ${gameId} not found`);
+
+  const reporterSnap = await gameRef.collection("players").doc(reporterId).get();
+  if (!reporterSnap.exists) {
+    throw new HttpsError("not-found", `${reporterId} is not in game ${gameId}`);
+  }
+  const targetSnap = await gameRef.collection("players").doc(targetPlayerId).get();
+  if (!targetSnap.exists) {
+    throw new HttpsError("not-found", `${targetPlayerId} is not in game ${gameId}`);
+  }
+
+  const reportRef = gameRef.collection("reports").doc();
+  await reportRef.set({
+    reporterId,
+    targetPlayerId,
+    reason,
+    observationId,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+
+  return { reportId: reportRef.id };
+});
