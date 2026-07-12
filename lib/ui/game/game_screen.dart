@@ -212,13 +212,27 @@ class _GameScreenState extends State<GameScreen> {
       stream: _playersStream,
       builder: (context, snapshot) {
         final players = snapshot.data;
-        if (players == null) {
+        Player? self;
+        if (players != null) {
+          for (final p in players) {
+            if (p.id == widget.playerId) {
+              self = p;
+              break;
+            }
+          }
+        }
+        // Covers both "no snapshot yet" and "publicPlayers snapshot arrived
+        // but the syncPlayerViews trigger for this viewer's own doc hasn't
+        // landed yet" — the latter is a real, legitimate intermediate state
+        // (the trigger runs asynchronously right after addPlayer/createGame
+        // resolves), not just the initial-load case, so both need the same
+        // loading treatment rather than a crash.
+        if (self == null) {
           return const Scaffold(
             backgroundColor: AppColors.ink,
             body: Center(child: CircularProgressIndicator(color: AppColors.brass)),
           );
         }
-        final self = players.firstWhere((p) => p.id == widget.playerId);
         _trackUnmasking(self);
 
         // A departed player can never legally vote/act again (the
@@ -241,7 +255,7 @@ class _GameScreenState extends State<GameScreen> {
         return _Dashboard(
           gameId: widget.gameId,
           self: self,
-          players: players,
+          players: players!,
           gameStream: _gameStream,
           mafiaThreadStream: _mafiaThreadStream,
           observationsStream: _observationsStream,

@@ -37,10 +37,18 @@ Future<void> main() async {
 void _useFirebaseEmulators() {
   // The Android emulator can't resolve the host machine's `localhost`;
   // 10.0.2.2 is its documented alias for it. iOS simulator and web both
-  // share the host's network namespace, so `localhost` works directly.
+  // share the host's network namespace, so a loopback address works
+  // directly — but it has to be the literal IPv4 address, not the
+  // `localhost` hostname: the emulators (Auth, Functions) only bind
+  // 127.0.0.1, while iOS's resolver sometimes prefers the `::1` IPv6
+  // loopback for `localhost`, which nothing is listening on. That produced
+  // exactly the intermittent "internal-error"/"unknown" symptom seen on
+  // device — connection refused on the IPv6 attempt, generic error
+  // surfaced by the SDK — even though the same emulators answered every
+  // `curl localhost:PORT` fine from the Mac itself.
   final host = !kIsWeb && defaultTargetPlatform == TargetPlatform.android
       ? '10.0.2.2'
-      : 'localhost';
+      : '127.0.0.1';
   FirebaseAuth.instance.useAuthEmulator(host, 9099);
   FirebaseFirestore.instance.useFirestoreEmulator(host, 8080);
   FirebaseFunctions.instance.useFunctionsEmulator(host, 5001);

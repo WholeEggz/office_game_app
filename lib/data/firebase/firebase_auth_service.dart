@@ -52,14 +52,19 @@ class FirebaseAuthService implements AuthService {
 
   @override
   Future<AppUser> signInWithDisplayName(String displayName) async {
+    // Deliberately not user.updateDisplayName()/reload(): that round-trip
+    // hits a firebase_auth plugin bug (native updateProfile throws a
+    // generic internal-error against the Auth emulator, at least for
+    // anonymous users on iOS) — see the flutterfire issue tracker. Nothing
+    // in this app reads Firebase Auth's own displayName field (grep
+    // confirms AuthService.currentUser has no other callers), so the
+    // display name only ever needs to travel as far as this return value.
     var user = _auth.currentUser;
     if (user == null) {
       final credential = await _auth.signInAnonymously();
       user = credential.user!;
     }
-    await user.updateDisplayName(displayName);
-    await user.reload();
-    return _toAppUser(_auth.currentUser)!;
+    return (id: user.uid, displayName: displayName);
   }
 
   @override

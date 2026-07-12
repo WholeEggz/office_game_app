@@ -149,10 +149,11 @@ class FirebaseGameRepository implements GameRepository {
   @override
   Stream<Game> watchGame(String gameId) {
     final gameRef = _games.doc(gameId);
-    final controller = StreamController<Game>.broadcast();
+    late final StreamController<Game> controller;
 
     DocumentSnapshot<Map<String, dynamic>>? gameSnap;
     QuerySnapshot<Map<String, dynamic>>? debugRosterSnap;
+    List<StreamSubscription>? subs;
 
     void emit() {
       final snap = gameSnap;
@@ -164,62 +165,89 @@ class FirebaseGameRepository implements GameRepository {
       controller.add(_gameFromData(gameId, data, players: players));
     }
 
-    final subs = <StreamSubscription>[
-      gameRef.snapshots().listen((snap) {
-        gameSnap = snap;
-        emit();
-      }, onError: controller.addError),
-      gameRef.collection('debugRoster').snapshots().listen((snap) {
-        debugRosterSnap = snap;
-        emit();
-      }, onError: controller.addError),
-    ];
-
-    controller.onCancel = () async {
-      for (final sub in subs) {
-        await sub.cancel();
-      }
-    };
+    // Firestore listeners must not start until something actually
+    // subscribes to `controller.stream` — starting them eagerly here (as
+    // this used to) races a slow-to-mount consumer: this is a broadcast
+    // controller, so any `controller.add()` called before the first
+    // `.listen()` is silently dropped, not buffered. GameScreen's
+    // dashboard only subscribes to this stream after the role-reveal
+    // screen is dismissed (a manual tap), which is easily slower than a
+    // Firestore snapshot callback — the one-and-only emission for an
+    // otherwise-unchanging game would be lost, leaving the dashboard
+    // spinning forever with nothing left to ever wake it up.
+    controller = StreamController<Game>.broadcast(
+      onListen: () {
+        subs = <StreamSubscription>[
+          gameRef.snapshots().listen((snap) {
+            gameSnap = snap;
+            emit();
+          }, onError: (Object e, StackTrace st) => controller.addError(e, st)),
+          gameRef.collection('debugRoster').snapshots().listen((snap) {
+            debugRosterSnap = snap;
+            emit();
+          }, onError: (Object e, StackTrace st) => controller.addError(e, st)),
+        ];
+      },
+      onCancel: () async {
+        final toCancel = subs;
+        subs = null;
+        gameSnap = null;
+        debugRosterSnap = null;
+        if (toCancel != null) {
+          for (final sub in toCancel) {
+            await sub.cancel();
+          }
+        }
+      },
+    );
     return controller.stream;
   }
 
   @override
   Stream<List<Game>> watchGames({required String viewerId}) {
-    final controller = StreamController<List<Game>>.broadcast();
+    late final StreamController<List<Game>> controller;
     final gamesById = <String, Game>{};
     final playerSubs = <String, StreamSubscription<List<Player>>>{};
-    late final StreamSubscription<QuerySnapshot<Map<String, dynamic>>> gamesSub;
+    StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? gamesSub;
 
     void emit() => controller.add(gamesById.values.toList());
 
-    gamesSub = _games.snapshots().listen((snapshot) {
-      final seenIds = <String>{};
-      for (final doc in snapshot.docs) {
-        seenIds.add(doc.id);
-        final existingPlayers = gamesById[doc.id]?.players ?? const <Player>[];
-        gamesById[doc.id] = _gameFromData(doc.id, doc.data(), players: existingPlayers);
-        playerSubs.putIfAbsent(doc.id, () {
-          return watchVisiblePlayers(gameId: doc.id, viewerId: viewerId).listen((players) {
-            final current = gamesById[doc.id];
-            if (current == null) return;
-            gamesById[doc.id] = current.copyWith(players: players);
-            emit();
-          });
+    // See watchGame's comment on why this must not start until
+    // `controller.stream` has an actual subscriber.
+    controller = StreamController<List<Game>>.broadcast(
+      onListen: () {
+        gamesSub = _games.snapshots().listen((snapshot) {
+          final seenIds = <String>{};
+          for (final doc in snapshot.docs) {
+            seenIds.add(doc.id);
+            final existingPlayers = gamesById[doc.id]?.players ?? const <Player>[];
+            gamesById[doc.id] = _gameFromData(doc.id, doc.data(), players: existingPlayers);
+            playerSubs.putIfAbsent(doc.id, () {
+              return watchVisiblePlayers(gameId: doc.id, viewerId: viewerId).listen((players) {
+                final current = gamesById[doc.id];
+                if (current == null) return;
+                gamesById[doc.id] = current.copyWith(players: players);
+                emit();
+              });
+            });
+          }
+          for (final staleId in gamesById.keys.where((id) => !seenIds.contains(id)).toList()) {
+            gamesById.remove(staleId);
+            unawaited(playerSubs.remove(staleId)?.cancel());
+          }
+          emit();
         });
-      }
-      for (final staleId in gamesById.keys.where((id) => !seenIds.contains(id)).toList()) {
-        gamesById.remove(staleId);
-        unawaited(playerSubs.remove(staleId)?.cancel());
-      }
-      emit();
-    });
-
-    controller.onCancel = () async {
-      await gamesSub.cancel();
-      for (final sub in playerSubs.values) {
-        await sub.cancel();
-      }
-    };
+      },
+      onCancel: () async {
+        await gamesSub?.cancel();
+        gamesSub = null;
+        gamesById.clear();
+        for (final sub in playerSubs.values) {
+          await sub.cancel();
+        }
+        playerSubs.clear();
+      },
+    );
     return controller.stream;
   }
 
@@ -234,11 +262,12 @@ class FirebaseGameRepository implements GameRepository {
     required String viewerId,
   }) {
     final gameRef = _games.doc(gameId);
-    final controller = StreamController<List<Player>>.broadcast();
+    late final StreamController<List<Player>> controller;
 
     QuerySnapshot<Map<String, dynamic>>? publicSnap;
     DocumentSnapshot<Map<String, dynamic>>? selfSnap;
     DocumentSnapshot<Map<String, dynamic>>? cellViewSnap;
+    List<StreamSubscription>? subs;
 
     void emit() {
       final public = publicSnap;
@@ -256,26 +285,39 @@ class FirebaseGameRepository implements GameRepository {
       controller.add(players);
     }
 
-    final subs = <StreamSubscription>[
-      gameRef.collection('publicPlayers').snapshots().listen((snap) {
-        publicSnap = snap;
-        emit();
-      }),
-      gameRef.collection('players').doc(viewerId).snapshots().listen((snap) {
-        selfSnap = snap;
-        emit();
-      }),
-      gameRef.collection('cellViews').doc(viewerId).snapshots().listen((snap) {
-        cellViewSnap = snap;
-        emit();
-      }),
-    ];
-
-    controller.onCancel = () async {
-      for (final sub in subs) {
-        await sub.cancel();
-      }
-    };
+    // See watchGame's comment on why these listeners must not start until
+    // `controller.stream` has an actual subscriber (broadcast controllers
+    // drop, not buffer, events emitted with zero listeners).
+    controller = StreamController<List<Player>>.broadcast(
+      onListen: () {
+        subs = <StreamSubscription>[
+          gameRef.collection('publicPlayers').snapshots().listen((snap) {
+            publicSnap = snap;
+            emit();
+          }, onError: (Object e, StackTrace st) {}),
+          gameRef.collection('players').doc(viewerId).snapshots().listen((snap) {
+            selfSnap = snap;
+            emit();
+          }, onError: (Object e, StackTrace st) {}),
+          gameRef.collection('cellViews').doc(viewerId).snapshots().listen((snap) {
+            cellViewSnap = snap;
+            emit();
+          }, onError: (Object e, StackTrace st) {}),
+        ];
+      },
+      onCancel: () async {
+        final toCancel = subs;
+        subs = null;
+        publicSnap = null;
+        selfSnap = null;
+        cellViewSnap = null;
+        if (toCancel != null) {
+          for (final sub in toCancel) {
+            await sub.cancel();
+          }
+        }
+      },
+    );
     return controller.stream;
   }
 
