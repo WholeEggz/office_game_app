@@ -6,10 +6,15 @@ import '../../domain/repositories/auth_service.dart';
 /// Phase 1b target: phone number or email + display name only, no
 /// corporate SSO (design pillar #3) — real phone/email verification UI is
 /// a later milestone. For now `signInWithDisplayName` signs into an
-/// anonymous Firebase Auth identity and attaches the display name; the
-/// SDK's own local persistence is what makes retyping the same name
-/// resume the same identity across app restarts, matching
-/// `LocalAuthService`'s intent without needing a lookup.
+/// anonymous Firebase Auth identity per display name, tracked in memory
+/// for the lifetime of this instance (see `_currentDisplayName`) —
+/// retyping the same name reuses the same identity within one run,
+/// matching `LocalAuthService`'s name-lookup semantics. Doesn't persist
+/// across app restarts (there's no reliable place to store the mapping:
+/// Firebase Auth's own displayName field can't be used — see the comment
+/// on `signInWithDisplayName` — and this app has no other backing store),
+/// so a fresh launch always establishes a fresh identity even for a name
+/// used before.
 ///
 /// The debug role switcher's multi-identity simulation
 /// (`registerNewPlayer`/`switchToUser`) has no natural mapping onto real
@@ -34,6 +39,7 @@ class FirebaseAuthService implements AuthService {
   final FirebaseFunctions _functions;
 
   final _mintedUsers = <String, ({String displayName, String customToken})>{};
+  String? _currentDisplayName;
 
   AppUser? _toAppUser(fb.User? user) =>
       user == null ? null : (id: user.uid, displayName: user.displayName ?? '');
@@ -60,10 +66,21 @@ class FirebaseAuthService implements AuthService {
     // confirms AuthService.currentUser has no other callers), so the
     // display name only ever needs to travel as far as this return value.
     var user = _auth.currentUser;
+    // A different name than whoever's currently signed in must not reuse
+    // that identity — without this check, retyping any name here just
+    // returned the *existing* anonymous session's uid with a new label
+    // slapped on the return value, so a second name typed in the same run
+    // showed up everywhere (game lists, in-game rosters) still tagged
+    // with the first name's already-joined games and player docs.
+    if (user != null && _currentDisplayName != displayName) {
+      await _auth.signOut();
+      user = null;
+    }
     if (user == null) {
       final credential = await _auth.signInAnonymously();
       user = credential.user!;
     }
+    _currentDisplayName = displayName;
     return (id: user.uid, displayName: displayName);
   }
 
