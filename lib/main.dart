@@ -62,7 +62,12 @@ class OfficeGameApp extends StatefulWidget {
 }
 
 class _OfficeGameAppState extends State<OfficeGameApp> {
-  AppBackend? _backend;
+  // BackendSelectionScreen (Local vs Firebase) was previously shown
+  // unconditionally in every build — a real release would have let any
+  // user switch to Local, an in-memory, zero-redaction mode meant purely
+  // for iterating on game logic during development. Outside kDebugMode,
+  // skip the screen entirely and go straight to the real backend.
+  AppBackend? _backend = kDebugMode ? null : AppBackend.firebase;
 
   @override
   Widget build(BuildContext context) {

@@ -56,6 +56,7 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
   fake_async: ^1.3.1
+  flutter_launcher_icons: ^0.14.3
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -101,3 +102,18 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# flutter_launcher_icons config — generates the full icon set for both
+# platforms from assets/icon/*.png (see assets/icon/*.svg for the
+# editable source, adapted from assets/graphics/app_mark_seal_eye.svg
+# with wider margins and simplified detail so it stays legible at
+# launcher-icon sizes). Run `dart run flutter_launcher_icons` after
+# editing either source PNG.
+flutter_launcher_icons:
+  image_path: "assets/icon/icon_master.png"
+  android: "launcher_icon"
+  ios: true
+  remove_alpha_ios: true
+  adaptive_icon_background: "#15120E"
+  adaptive_icon_foreground: "assets/icon/icon_foreground.png"
+  min_sdk_android: 23
