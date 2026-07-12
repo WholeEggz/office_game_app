@@ -317,4 +317,42 @@ abstract class GameRepository {
     required String gameId,
     required String playerId,
   });
+
+  /// Reports [targetPlayerId] for [reason] — either a general report
+  /// ([observationId] null) or a report of a specific observation entry
+  /// they authored. Recorded for later moderator review; on its own this
+  /// has no visible effect for anyone in the game — pair with
+  /// [blockPlayer] if the reporter also wants [targetPlayerId]'s
+  /// observations hidden from their own view right away.
+  Future<void> reportPlayer({
+    required String gameId,
+    required String reporterId,
+    required String targetPlayerId,
+    required String reason,
+    String? observationId,
+  });
+
+  /// Hides [blockedPlayerId]'s observation-log entries from [viewerId]'s
+  /// own view of this game, from now on — a per-viewer preference, not a
+  /// game-truth change, so it never affects voting, roles, or anyone
+  /// else's view. Independent of [reportPlayer]: blocking doesn't require
+  /// having reported anyone, and reporting doesn't block automatically.
+  Future<void> blockPlayer({
+    required String gameId,
+    required String viewerId,
+    required String blockedPlayerId,
+  });
+
+  /// Reverses [blockPlayer].
+  Future<void> unblockPlayer({
+    required String gameId,
+    required String viewerId,
+    required String blockedPlayerId,
+  });
+
+  /// [viewerId]'s current block list for this game.
+  Stream<Set<String>> watchBlockedPlayerIds({
+    required String gameId,
+    required String viewerId,
+  });
 }

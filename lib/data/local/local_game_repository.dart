@@ -87,6 +87,15 @@ class _GameRecord {
   final observationChanges = StreamController<void>.broadcast();
   final voteChanges = StreamController<void>.broadcast();
 
+  /// Each viewer's own block list for this game — a per-viewer
+  /// preference, not game truth, so it's keyed by viewer rather than
+  /// shared. Reports aren't stored at all: nothing in Local mode ever
+  /// reads them back (there's no moderator view), so [reportPlayer]
+  /// exists here purely for interface parity with Firebase, which does
+  /// persist them for later review.
+  final Map<String, Set<String>> blockedByViewer = {};
+  final blockChanges = StreamController<void>.broadcast();
+
   _GameRecord(this.game);
 }
 
@@ -1182,5 +1191,65 @@ class LocalGameRepository implements GameRepository {
     final record = _record(gameId);
     _recordMoment(record, playerId, GameMomentType.reenteredCase, record.game.currentRound,
         countsAsRoundActivity: false);
+  }
+
+  // Deliberately not gated by _requireGameNotEnded: reporting/blocking are
+  // safety actions, not gameplay actions — there's no reason a case ending
+  // should stop someone from reporting something they noticed right at
+  // the end, or from blocking a player whose name they still see in that
+  // now-closed case's history.
+
+  @override
+  Future<void> reportPlayer({
+    required String gameId,
+    required String reporterId,
+    required String targetPlayerId,
+    required String reason,
+    String? observationId,
+  }) async {
+    final record = _record(gameId);
+    if (record.game.playerById(reporterId) == null) {
+      throw StateError('$reporterId is not in game $gameId');
+    }
+    if (record.game.playerById(targetPlayerId) == null) {
+      throw StateError('$targetPlayerId is not in game $gameId');
+    }
+    // Nothing stores or reads this back in Local mode — no moderator view
+    // exists for a single-device, no-backend session. This method exists
+    // purely so the interface behaves identically to Firebase's, which
+    // does persist reports for later review.
+  }
+
+  @override
+  Future<void> blockPlayer({
+    required String gameId,
+    required String viewerId,
+    required String blockedPlayerId,
+  }) async {
+    final record = _record(gameId);
+    record.blockedByViewer.putIfAbsent(viewerId, () => {}).add(blockedPlayerId);
+    record.blockChanges.add(null);
+  }
+
+  @override
+  Future<void> unblockPlayer({
+    required String gameId,
+    required String viewerId,
+    required String blockedPlayerId,
+  }) async {
+    final record = _record(gameId);
+    record.blockedByViewer[viewerId]?.remove(blockedPlayerId);
+    record.blockChanges.add(null);
+  }
+
+  @override
+  Stream<Set<String>> watchBlockedPlayerIds({
+    required String gameId,
+    required String viewerId,
+  }) async* {
+    final record = _record(gameId);
+    Set<String> current() => Set.unmodifiable(record.blockedByViewer[viewerId] ?? const {});
+    yield current();
+    yield* record.blockChanges.stream.map((_) => current());
   }
 }

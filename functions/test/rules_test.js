@@ -104,6 +104,14 @@ async function main() {
       round: 1,
       acknowledged: false,
     });
+    await db.collection(`games/${GAME_ID}/reports`).doc("report1").set({
+      reporterId: "villagerA",
+      targetPlayerId: "mafiaB",
+      reason: "test seed",
+    });
+    await db.collection(`games/${GAME_ID}/blocks`).doc("villagerA").set({
+      blockedPlayerIds: ["mafiaB"],
+    });
   });
 
   const villagerA = env.authenticatedContext("villagerA").firestore();
@@ -233,6 +241,49 @@ async function main() {
     assertFails(anon.doc(`games/${GAME_ID}`).get())
   );
 
+  // --- reports: never client-readable or writable, by anyone, including
+  // the reporter themselves — written only by the reportPlayer Cloud
+  // Function via the Admin SDK bypass. No in-app moderator view exists to
+  // grant read access to. ---
+  await check("reporter reads their own report: DENIED", () =>
+    assertFails(villagerA.doc(`games/${GAME_ID}/reports/report1`).get())
+  );
+  await check("outsider reads a report: DENIED", () =>
+    assertFails(outsider.doc(`games/${GAME_ID}/reports/report1`).get())
+  );
+  await check("client cannot write a report directly: DENIED", () =>
+    assertFails(
+      villagerA.doc(`games/${GAME_ID}/reports/report2`).set({
+        reporterId: "villagerA",
+        targetPlayerId: "mafiaB",
+        reason: "trying to bypass the function",
+      })
+    )
+  );
+
+  // --- blocks: self-read/write only, both directions client-only (no
+  // Cloud Function ever touches this — a viewer's own preference, not
+  // game truth) ---
+  await check("viewer reads their own block list: allowed", () =>
+    assertSucceeds(villagerA.doc(`games/${GAME_ID}/blocks/villagerA`).get())
+  );
+  await check("viewer writes their own block list: allowed", () =>
+    assertSucceeds(
+      villagerA.doc(`games/${GAME_ID}/blocks/villagerA`).set({ blockedPlayerIds: ["mafiaB"] })
+    )
+  );
+  await check("outsider reads someone else's block list: DENIED", () =>
+    assertFails(outsider.doc(`games/${GAME_ID}/blocks/villagerA`).get())
+  );
+  await check("outsider writes someone else's block list: DENIED", () =>
+    assertFails(
+      outsider.doc(`games/${GAME_ID}/blocks/villagerA`).set({ blockedPlayerIds: [] })
+    )
+  );
+  await check("unauthenticated reads a block list: DENIED", () =>
+    assertFails(anon.doc(`games/${GAME_ID}/blocks/villagerA`).get())
+  );
+
   const failed = results.filter((r) => !r.ok);
   for (const r of results) {
     console.log(`${r.ok ? "PASS" : "FAIL"} — ${r.name}`);
@@ -258,6 +309,9 @@ async function main() {
       `games/${GAME_ID}/mafiaThread/entry1`,
       `games/${GAME_ID}/votes/vote1`,
       `games/${GAME_ID}/observations/obs1`,
+      `games/${GAME_ID}/reports/report1`,
+      `games/${GAME_ID}/reports/report2`,
+      `games/${GAME_ID}/blocks/villagerA`,
       `games/${GAME_ID}`,
     ];
     await Promise.all(paths.map((p) => db.doc(p).delete()));

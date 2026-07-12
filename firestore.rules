@@ -127,6 +127,27 @@ service cloud.firestore {
         allow read: if isSignedIn();
         allow write: if false;
       }
+
+      match /reports/{reportId} {
+        // Written only by the reportPlayer Cloud Function (Admin SDK
+        // bypass) — never client-readable at all, unlike every other
+        // collection above: reporting someone shouldn't let them (or
+        // anyone else) see it, and there's no in-app moderator view to
+        // grant read access to (reviewed externally).
+        allow read: if false;
+        allow write: if false;
+      }
+
+      match /blocks/{viewerId} {
+        // A player's own preference (which other players' observations
+        // to hide from themselves), not game truth — same reasoning as
+        // moments above: doesn't decide anything about the game itself,
+        // so a direct client write is safe. Unlike moments, this is
+        // client-only in both directions; no Cloud Function ever writes
+        // it.
+        allow read: if isSelf(viewerId);
+        allow write: if isSelf(viewerId);
+      }
     }
   }
 }
