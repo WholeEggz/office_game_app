@@ -17,6 +17,43 @@ import '../stats/track_record_screen.dart';
 import 'case_creation_screen.dart';
 import 'case_details_screen.dart';
 
+/// "17:00"-style plain-date fallback for anything more than a week old —
+/// mirrors game_screen.dart's `_formatTimeOfDay` in spirit (hand-rolled,
+/// no `intl` dependency for one string).
+String _formatAddedDate(DateTime createdAt) {
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final createdDay = DateTime(createdAt.year, createdAt.month, createdAt.day);
+  final daysAgo = today.difference(createdDay).inDays;
+  if (daysAgo <= 0) return 'Added today';
+  if (daysAgo == 1) return 'Added yesterday';
+  if (daysAgo < 7) return 'Added $daysAgo days ago';
+  const months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+  return 'Added ${months[createdAt.month - 1]} ${createdAt.day}';
+}
+
+/// Sort options for "Find your case" — newest-first by default so a case
+/// you just created or heard about is easy to spot without hunting.
+enum _SortOption {
+  newest('Newest first'),
+  oldest('Oldest first'),
+  mostPlayers('Most players'),
+  mostRounds('Most rounds');
+
+  final String label;
+  const _SortOption(this.label);
+
+  int compare(Game a, Game b) => switch (this) {
+        _SortOption.newest => b.createdAt.compareTo(a.createdAt),
+        _SortOption.oldest => a.createdAt.compareTo(b.createdAt),
+        _SortOption.mostPlayers => b.players.length.compareTo(a.players.length),
+        _SortOption.mostRounds => b.currentRound.compareTo(a.currentRound),
+      };
+}
+
 /// The real player's path: register once, then find and join a game from
 /// the list — no jumping between identities like the tester flow does.
 class PlayerEntryScreen extends StatefulWidget {
@@ -29,6 +66,20 @@ class PlayerEntryScreen extends StatefulWidget {
 class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
   final _nameController = TextEditingController();
   AppUser? _user;
+  _SortOption _sort = _SortOption.newest;
+  final Set<GameStatus> _statusFilter = GameStatus.values.toSet();
+
+  /// At least one status stays selected — an empty filter would just read
+  /// as a confusing "no cases" screen rather than an intentional choice.
+  void _toggleStatusFilter(GameStatus status) {
+    setState(() {
+      if (_statusFilter.contains(status)) {
+        if (_statusFilter.length > 1) _statusFilter.remove(status);
+      } else {
+        _statusFilter.add(status);
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -158,6 +209,8 @@ class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
       stream: repo.watchGames(viewerId: user.id),
       builder: (context, snapshot) {
         final games = snapshot.data ?? const [];
+        final visible = games.where((g) => _statusFilter.contains(g.status)).toList()
+          ..sort(_sort.compare);
         return ListView(
           padding: const EdgeInsets.all(AppSpacing.lg),
           children: [
@@ -165,10 +218,21 @@ class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
             const SizedBox(height: AppSpacing.xs),
             Text('Signed in as ${user.displayName}.', style: AppTypography.bodySmall),
             const SizedBox(height: AppSpacing.xl),
+            if (games.isNotEmpty) ...[
+              _CaseListControls(
+                sort: _sort,
+                statusFilter: _statusFilter,
+                onSortChanged: (value) => setState(() => _sort = value),
+                onStatusToggled: _toggleStatusFilter,
+              ),
+              const SizedBox(height: AppSpacing.lg),
+            ],
             if (games.isEmpty)
               Text('No cases open yet.', style: AppTypography.bodySmall)
+            else if (visible.isEmpty)
+              Text('No cases match these filters.', style: AppTypography.bodySmall)
             else
-              for (final game in games) ...[
+              for (final game in visible) ...[
                 _GameListTile(
                   game: game,
                   selfId: user.id,
@@ -231,6 +295,11 @@ class _GameListTile extends StatelessWidget {
                   '${game.players.length}/${game.minPlayers} players',
                   style: AppTypography.bodySmall,
                 ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  _formatAddedDate(game.createdAt),
+                  style: AppTypography.dataSmall,
+                ),
               ],
             ),
           ),
@@ -239,6 +308,97 @@ class _GameListTile extends StatelessWidget {
             child: Text(alreadyJoined ? 'Enter' : (ended ? 'Closed' : 'Join')),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The sort menu + status filter pills sitting above the case list —
+/// kept as its own widget so `_PlayerEntryScreenState.build` doesn't have
+/// to thread the toggle/selection logic inline.
+class _CaseListControls extends StatelessWidget {
+  final _SortOption sort;
+  final Set<GameStatus> statusFilter;
+  final ValueChanged<_SortOption> onSortChanged;
+  final ValueChanged<GameStatus> onStatusToggled;
+
+  const _CaseListControls({
+    required this.sort,
+    required this.statusFilter,
+    required this.onSortChanged,
+    required this.onStatusToggled,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: AppSpacing.sm,
+          runSpacing: AppSpacing.sm,
+          children: [
+            for (final status in GameStatus.values)
+              _StatusFilterPill(
+                status: status,
+                selected: statusFilter.contains(status),
+                onTap: () => onStatusToggled(status),
+              ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        PopupMenuButton<_SortOption>(
+          initialValue: sort,
+          onSelected: onSortChanged,
+          itemBuilder: (context) => [
+            for (final option in _SortOption.values)
+              PopupMenuItem(value: option, child: Text(option.label)),
+          ],
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(PhosphorIconsLight.sortAscending, size: 16, color: AppColors.textSecondary),
+              const SizedBox(width: AppSpacing.xs),
+              Text('Sort: ${sort.label}', style: AppTypography.bodySmall),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// A single toggleable status filter, styled as a pill in the same hand-
+/// built idiom as `VoteWeightPill` rather than a stock Material chip, so
+/// it reads as part of this app's own look rather than a default widget.
+class _StatusFilterPill extends StatelessWidget {
+  final GameStatus status;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _StatusFilterPill({required this.status, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(AppRadii.pill),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.xs),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.brassSoft : AppColors.surface,
+          borderRadius: BorderRadius.circular(AppRadii.pill),
+          border: Border.all(
+            color: selected ? AppColors.brass : AppColors.borderHairline,
+            width: 1,
+          ),
+        ),
+        child: Text(
+          status.name,
+          style: AppTypography.bodySmall.copyWith(
+            color: selected ? AppColors.brass : AppColors.textMuted,
+          ),
+        ),
       ),
     );
   }
