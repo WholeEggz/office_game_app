@@ -23,6 +23,17 @@ abstract class AuthService {
   /// identity across games by re-typing the same name is the point.
   Future<AppUser> signInWithDisplayName(String displayName);
 
+  /// Checks for an identity already signed in from a previous app launch
+  /// and resolves its full [AppUser] — including [AppUser.displayName],
+  /// which [currentUser] alone can't reliably provide for the Firebase
+  /// backend (see `FirebaseAuthService`'s implementation doc). Returns
+  /// null when there's nothing to resume, in which case the caller should
+  /// fall back to [signInWithDisplayName]'s registration flow. Meant to be
+  /// called once, on the real player entry screen's own startup — this is
+  /// the "did this device already register?" check, not a general
+  /// replacement for [currentUser].
+  Future<AppUser?> resumeSession();
+
   /// Always registers a brand-new local identity, even if [displayName]
   /// matches an existing one, and does not change [currentUser]. Meant for
   /// adding *other* simulated players to a game — those are meant to

@@ -479,7 +479,7 @@ class _UnmaskStamp extends StatelessWidget {
     );
     if (!reduceMotion) {
       card = card
-          .animate()
+          .animate(onComplete: (_) => HapticFeedback.heavyImpact())
           .scale(
             begin: const Offset(1.15, 1.15),
             end: const Offset(1, 1),
@@ -550,6 +550,10 @@ class _EliminationBannerState extends State<_EliminationBanner>
 
   void _reveal() {
     if (_tapped) return;
+    // Heavy, not medium — this is the danger banner (see the class doc on
+    // _RecruitmentBanner for the matching "invitation" tone it's mirroring
+    // against), so the tap that starts the wipe should feel like it too.
+    HapticFeedback.heavyImpact();
     setState(() => _tapped = true);
     if (MediaQuery.of(context).disableAnimations) {
       _controller.value = 1;
@@ -564,6 +568,10 @@ class _EliminationBannerState extends State<_EliminationBanner>
           playerId: widget.selfId,
         );
     if (!mounted) return;
+    // The answer itself is the real moment here, not the tap that asked
+    // for it — heavy if the hit actually landed on you, light for the
+    // relief of finding out it didn't.
+    (wasTarget ? HapticFeedback.heavyImpact : HapticFeedback.lightImpact)();
     setState(() => _wasTarget = wasTarget);
   }
 
@@ -712,6 +720,10 @@ class _RecruitmentBannerState extends State<_RecruitmentBanner>
 
   void _reveal() {
     if (_tapped) return;
+    // Medium, not heavy — this is the "invitation" banner (see the class
+    // doc above), so the tap that starts the wipe should read as lighter
+    // than the elimination banner's equivalent moment.
+    HapticFeedback.mediumImpact();
     setState(() => _tapped = true);
     if (MediaQuery.of(context).disableAnimations) {
       _controller.value = 1;
@@ -727,6 +739,9 @@ class _RecruitmentBannerState extends State<_RecruitmentBanner>
           accept: accept,
         );
     if (!mounted) return;
+    // Same tiering as _EliminationBannerState._acknowledge: the answer is
+    // the real moment, heavier if the sign was actually meant for you.
+    (wasTarget ? HapticFeedback.heavyImpact : HapticFeedback.lightImpact)();
     setState(() {
       _wasTarget = wasTarget;
       _myAnswer = accept;

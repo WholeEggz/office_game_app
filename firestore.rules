@@ -149,5 +149,15 @@ service cloud.firestore {
         allow write: if isSelf(viewerId);
       }
     }
+
+    match /users/{userId} {
+      // This device's persisted display name (FirebaseAuthService),
+      // recovered by resumeSession() on a later app launch since Firebase
+      // Auth's own displayName field can't be used (see that class's doc
+      // comment). Not game truth, purely this device's own profile fact,
+      // so client read/write is safe — same reasoning as `blocks`.
+      allow read: if isSelf(userId);
+      allow write: if isSelf(userId);
+    }
   }
 }

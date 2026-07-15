@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 
@@ -9,12 +10,18 @@ import '../../domain/repositories/auth_service.dart';
 /// anonymous Firebase Auth identity per display name, tracked in memory
 /// for the lifetime of this instance (see `_currentDisplayName`) —
 /// retyping the same name reuses the same identity within one run,
-/// matching `LocalAuthService`'s name-lookup semantics. Doesn't persist
-/// across app restarts (there's no reliable place to store the mapping:
-/// Firebase Auth's own displayName field can't be used — see the comment
-/// on `signInWithDisplayName` — and this app has no other backing store),
-/// so a fresh launch always establishes a fresh identity even for a name
-/// used before.
+/// matching `LocalAuthService`'s name-lookup semantics.
+///
+/// The anonymous Firebase Auth session itself persists across app
+/// restarts (normal Firebase Auth behavior — the SDK caches it in secure
+/// device storage until an explicit `signOut()`), but there's nowhere
+/// reliable to recover the *display name* that goes with it after a
+/// restart: `_currentDisplayName` is just an in-memory field, and Firebase
+/// Auth's own displayName field can't be used (see the comment on
+/// `signInWithDisplayName`). `resumeSession` and `signInWithDisplayName`
+/// below back that mapping with a plain Firestore doc (`users/{uid}`)
+/// instead — this app's own store, not a Firebase Auth profile field, so
+/// it doesn't hit that bug.
 ///
 /// The debug role switcher's multi-identity simulation
 /// (`registerNewPlayer`/`switchToUser`) has no natural mapping onto real
@@ -31,12 +38,14 @@ import '../../domain/repositories/auth_service.dart';
 /// the first thing tapped. `switchToUser` exchanges the stored token via
 /// `signInWithCustomToken`.
 class FirebaseAuthService implements AuthService {
-  FirebaseAuthService({fb.FirebaseAuth? auth, FirebaseFunctions? functions})
+  FirebaseAuthService({fb.FirebaseAuth? auth, FirebaseFunctions? functions, FirebaseFirestore? firestore})
       : _auth = auth ?? fb.FirebaseAuth.instance,
-        _functions = functions ?? FirebaseFunctions.instance;
+        _functions = functions ?? FirebaseFunctions.instance,
+        _db = firestore ?? FirebaseFirestore.instance;
 
   final fb.FirebaseAuth _auth;
   final FirebaseFunctions _functions;
+  final FirebaseFirestore _db;
 
   final _mintedUsers = <String, ({String displayName, String customToken})>{};
   String? _currentDisplayName;
@@ -61,10 +70,9 @@ class FirebaseAuthService implements AuthService {
     // Deliberately not user.updateDisplayName()/reload(): that round-trip
     // hits a firebase_auth plugin bug (native updateProfile throws a
     // generic internal-error against the Auth emulator, at least for
-    // anonymous users on iOS) — see the flutterfire issue tracker. Nothing
-    // in this app reads Firebase Auth's own displayName field (grep
-    // confirms AuthService.currentUser has no other callers), so the
-    // display name only ever needs to travel as far as this return value.
+    // anonymous users on iOS) — see the flutterfire issue tracker. The
+    // `users/{uid}` Firestore doc below is this app's own store for the
+    // display name instead (see this class's doc comment).
     var user = _auth.currentUser;
     // A different name than whoever's currently signed in must not reuse
     // that identity — without this check, retyping any name here just
@@ -80,6 +88,31 @@ class FirebaseAuthService implements AuthService {
       final credential = await _auth.signInAnonymously();
       user = credential.user!;
     }
+    _currentDisplayName = displayName;
+    await _db.collection('users').doc(user.uid).set(
+      {'displayName': displayName},
+      SetOptions(merge: true),
+    );
+    return (id: user.uid, displayName: displayName);
+  }
+
+  @override
+  Future<AppUser?> resumeSession() async {
+    final user = _auth.currentUser;
+    if (user == null) return null;
+    if (_currentDisplayName != null) {
+      // Already resolved earlier this run (e.g. this screen was already
+      // entered once) — no need to hit Firestore again.
+      return (id: user.uid, displayName: _currentDisplayName!);
+    }
+    final doc = await _db.collection('users').doc(user.uid).get();
+    final displayName = doc.data()?['displayName'] as String?;
+    // No stored name means this anonymous session predates this feature,
+    // or was only ever used for the debug quick-start throwaway session
+    // (registerNewPlayer/proposeElimination-style callers) — either way,
+    // there's nothing real to resume, so fall back to registration rather
+    // than showing a blank name.
+    if (displayName == null || displayName.isEmpty) return null;
     _currentDisplayName = displayName;
     return (id: user.uid, displayName: displayName);
   }
