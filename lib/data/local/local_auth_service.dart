@@ -32,6 +32,13 @@ class LocalAuthService implements AuthService {
     return user;
   }
 
+  // No cross-restart persistence in Local mode at all (a fresh process
+  // always starts with `_current` null) — this just returns whatever's
+  // already current within this same run, the same "nothing new to do"
+  // answer a genuine restart would give.
+  @override
+  Future<AppUser?> resumeSession() async => _current;
+
   @override
   Future<AppUser> registerNewPlayer(String displayName) async {
     final user = (id: _uuid.v4(), displayName: displayName);

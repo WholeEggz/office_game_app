@@ -284,6 +284,26 @@ async function main() {
     assertFails(anon.doc(`games/${GAME_ID}/blocks/villagerA`).get())
   );
 
+  // --- users/{userId}: this device's persisted display name
+  // (FirebaseAuthService.resumeSession), self-read/write only — top-level,
+  // not nested under games/{gameId}, since a display name belongs to a
+  // person/device, not a specific case. ---
+  await check("viewer reads their own display name: allowed", () =>
+    assertSucceeds(villagerA.doc("users/villagerA").get())
+  );
+  await check("viewer writes their own display name: allowed", () =>
+    assertSucceeds(villagerA.doc("users/villagerA").set({ displayName: "Alice" }))
+  );
+  await check("outsider reads someone else's display name: DENIED", () =>
+    assertFails(outsider.doc("users/villagerA").get())
+  );
+  await check("outsider writes someone else's display name: DENIED", () =>
+    assertFails(outsider.doc("users/villagerA").set({ displayName: "Mallory" }))
+  );
+  await check("unauthenticated reads a display name: DENIED", () =>
+    assertFails(anon.doc("users/villagerA").get())
+  );
+
   const failed = results.filter((r) => !r.ok);
   for (const r of results) {
     console.log(`${r.ok ? "PASS" : "FAIL"} — ${r.name}`);
@@ -313,6 +333,7 @@ async function main() {
       `games/${GAME_ID}/reports/report2`,
       `games/${GAME_ID}/blocks/villagerA`,
       `games/${GAME_ID}`,
+      "users/villagerA",
     ];
     await Promise.all(paths.map((p) => db.doc(p).delete()));
     const momentsSnap = await db.collection(`games/${GAME_ID}/moments`).get();

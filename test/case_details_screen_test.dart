@@ -21,6 +21,9 @@ Future<void> _signInAndShowList(WidgetTester tester, LocalGameRepository repo) a
     ],
     child: const MaterialApp(home: PlayerEntryScreen()),
   ));
+  // One frame for PlayerEntryScreen's initial resumeSession() check to
+  // resolve before the registration form is in the tree.
+  await tester.pump();
   await tester.enterText(find.byType(TextField), 'Alice');
   await tester.tap(find.text('Continue'));
   await tester.pump();

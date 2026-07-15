@@ -66,8 +66,35 @@ class PlayerEntryScreen extends StatefulWidget {
 class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
   final _nameController = TextEditingController();
   AppUser? _user;
+  // True only until the initial resumeSession() check resolves — brief in
+  // practice (an already-cached auth state plus one Firestore read at
+  // worst), but real: without this, a returning signed-in user would
+  // flash the registration form for a frame before this screen replaces
+  // it with the game list.
+  bool _resumingSession = true;
   _SortOption _sort = _SortOption.newest;
   final Set<GameStatus> _statusFilter = GameStatus.values.toSet();
+
+  @override
+  void initState() {
+    super.initState();
+    _resumeSession();
+  }
+
+  /// The "signed-in user returns" flow: checks whether this device already
+  /// has an identity from a previous launch and, if so, skips registration
+  /// entirely and lands straight on the game list — the same thing
+  /// `_register` does, just without the user having to retype their name.
+  /// Resolves to the registration form when there's nothing to resume
+  /// (first launch, or a signed-out/never-registered device).
+  Future<void> _resumeSession() async {
+    final resumed = await context.read<AuthService>().resumeSession();
+    if (!mounted) return;
+    setState(() {
+      _user = resumed;
+      _resumingSession = false;
+    });
+  }
 
   /// At least one status stays selected — an empty filter would just read
   /// as a confusing "no cases" screen rather than an intentional choice.
@@ -169,7 +196,9 @@ class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
         ],
       ),
       body: SafeArea(
-        child: _user == null ? _buildRegisterForm() : _buildGameList(_user!),
+        child: _resumingSession
+            ? const Center(child: CircularProgressIndicator())
+            : (_user == null ? _buildRegisterForm() : _buildGameList(_user!)),
       ),
     );
   }
