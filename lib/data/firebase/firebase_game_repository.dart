@@ -489,7 +489,29 @@ class FirebaseGameRepository implements GameRepository {
   /// in-memory branch.
   Stream<List<T>> _emptyOnPermissionDenied<T>(Stream<List<T>> stream) {
     StreamSubscription<List<T>>? sub;
+    var cancelled = false;
     late final StreamController<List<T>> controller;
+    void subscribe() {
+      sub = stream.listen(
+        controller.add,
+        onError: (Object error, StackTrace stackTrace) {
+          if (error is FirebaseException && error.code == 'permission-denied') {
+            // Firestore never retries a listener it has denied — a player
+            // who just joined can hit this for a moment before their own
+            // membership doc is visible to the rules evaluating this
+            // query. Show empty rather than erroring out, but keep
+            // retrying instead of leaving the stream dead for the rest of
+            // this screen's lifetime once that doc does land.
+            controller.add(const []);
+            sub?.cancel();
+            if (!cancelled) Future.delayed(const Duration(seconds: 2), subscribe);
+            return;
+          }
+          controller.addError(error, stackTrace);
+        },
+      );
+    }
+
     controller = StreamController<List<T>>.broadcast(
       // Deferring the underlying listen() until this stream actually has a
       // subscriber avoids a lost-event race: broadcast controllers don't
@@ -497,19 +519,11 @@ class FirebaseGameRepository implements GameRepository {
       // snapshot (the already-existing docs) before the real consumer
       // (e.g. a StreamBuilder built a frame later) ever subscribes,
       // silently dropping it until the next unrelated write.
-      onListen: () {
-        sub = stream.listen(
-          controller.add,
-          onError: (Object error, StackTrace stackTrace) {
-            if (error is FirebaseException && error.code == 'permission-denied') {
-              controller.add(const []);
-              return;
-            }
-            controller.addError(error, stackTrace);
-          },
-        );
+      onListen: subscribe,
+      onCancel: () {
+        cancelled = true;
+        sub?.cancel();
       },
-      onCancel: () => sub?.cancel(),
     );
     return controller.stream;
   }
@@ -615,9 +629,12 @@ class FirebaseGameRepository implements GameRepository {
     required String viewerId,
   }) {
     return _emptyOnPermissionDenied(
-      _games.doc(gameId).collection('observations').snapshots().map(
-            (snap) => snap.docs.map(_observationFromDoc).toList(),
-          ),
+      _games
+          .doc(gameId)
+          .collection('observations')
+          .orderBy('createdAt')
+          .snapshots()
+          .map((snap) => snap.docs.map(_observationFromDoc).toList()),
     );
   }
 

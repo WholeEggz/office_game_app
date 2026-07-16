@@ -2170,8 +2170,12 @@ class _ObservationSectionState extends State<_ObservationSection> {
                                       .copyWith(color: AppColors.textPrimary),
                                 ),
                               ),
-                              if (o.authorId != widget.self.id)
-                                IconButton(
+                              Visibility(
+                                visible: o.authorId != widget.self.id,
+                                maintainSize: true,
+                                maintainAnimation: true,
+                                maintainState: true,
+                                child: IconButton(
                                   icon: Icon(PhosphorIconsLight.flag,
                                       size: 16, color: AppColors.textMuted),
                                   tooltip: 'Report this entry',
@@ -2188,6 +2192,7 @@ class _ObservationSectionState extends State<_ObservationSection> {
                                     observationId: o.id,
                                   ),
                                 ),
+                              ),
                             ],
                           ),
                         ),
