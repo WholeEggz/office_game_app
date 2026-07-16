@@ -19,6 +19,14 @@ abstract class GameRepository {
   /// [rulesDescription] is the creator's own free-text description of this
   /// case's variant of the rules (see [Game.rulesDescription]) — optional,
   /// blank by default.
+  ///
+  /// [isRestricted] gates the case behind a 3-word passphrase (see
+  /// [Game.isRestricted], [verifyPassphrase], [addPlayer]) — [passphraseWords]
+  /// must then be exactly 3 non-blank words; the caller (the case-creation
+  /// screen) is responsible for generating and showing them to the
+  /// creator, since they're the one who has to relay them out of band.
+  /// Stored case/whitespace-insensitively and never returned by anything
+  /// a prospective player can read.
   Future<Game> createGame({
     required String locationTag,
     required int minPlayers,
@@ -29,6 +37,8 @@ abstract class GameRepository {
     Duration executionWindow = const Duration(hours: 1),
     Duration dailyCutoffTime = const Duration(hours: 17),
     String rulesDescription = '',
+    bool isRestricted = false,
+    List<String>? passphraseWords,
   });
 
   /// Adds a new player to the game, always as a villager at the standard
@@ -37,10 +47,32 @@ abstract class GameRepository {
   /// insensitive) is already taken by another player in this same game —
   /// two people can share a first name in real life, but not within one
   /// roster, where it'd be ambiguous who's who in votes and observations.
+  ///
+  /// [passphraseWords] is required, and checked against the case's actual
+  /// passphrase (case/whitespace-insensitively, order not significant), if
+  /// and only if [Game.isRestricted] — throws a [StateError] on a mismatch
+  /// (or a missing/incomplete [passphraseWords] for a restricted case).
+  /// This is the real enforcement point, not just [verifyPassphrase]'s
+  /// pre-join UI gate: a client skipping straight to [addPlayer] without
+  /// ever calling [verifyPassphrase] still can't get in without the actual
+  /// words.
   Future<Player> addPlayer({
     required String gameId,
     required String playerId,
     required String name,
+    List<String>? passphraseWords,
+  });
+
+  /// Checks [words] against [gameId]'s actual passphrase
+  /// (case/whitespace-insensitively, order not significant) without
+  /// joining or changing anything — the pre-join UI gate that unlocks a
+  /// restricted case's details screen for a prospective player who hasn't
+  /// joined yet. Always `true` for a case where [Game.isRestricted] is
+  /// false, since there's nothing to check. [addPlayer] re-validates
+  /// independently — this alone never grants membership.
+  Future<bool> verifyPassphrase({
+    required String gameId,
+    required List<String> words,
   });
 
   /// Voluntarily removes [playerId] from active play — they stop

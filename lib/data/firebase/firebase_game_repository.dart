@@ -83,6 +83,8 @@ class FirebaseGameRepository implements GameRepository {
     Duration executionWindow = const Duration(hours: 1),
     Duration dailyCutoffTime = const Duration(hours: 17),
     String rulesDescription = '',
+    bool isRestricted = false,
+    List<String>? passphraseWords,
   }) async {
     final result = await _call('createGame', {
       'locationTag': locationTag,
@@ -94,6 +96,8 @@ class FirebaseGameRepository implements GameRepository {
       'executionWindowSeconds': executionWindow.inSeconds,
       'dailyCutoffSeconds': dailyCutoffTime.inSeconds,
       'rulesDescription': rulesDescription,
+      'isRestricted': isRestricted,
+      'passphraseWords': passphraseWords,
     });
     final gameId = result['gameId'] as String;
     // Callers only ever use the returned game's `id` (case creation and the
@@ -113,6 +117,7 @@ class FirebaseGameRepository implements GameRepository {
       executionWindow: executionWindow,
       dailyCutoffTime: dailyCutoffTime,
       createdAt: DateTime.now(),
+      isRestricted: isRestricted,
     );
   }
 
@@ -121,9 +126,24 @@ class FirebaseGameRepository implements GameRepository {
     required String gameId,
     required String playerId,
     required String name,
+    List<String>? passphraseWords,
   }) async {
-    await _call('addPlayer', {'gameId': gameId, 'playerId': playerId, 'name': name});
+    await _call('addPlayer', {
+      'gameId': gameId,
+      'playerId': playerId,
+      'name': name,
+      'passphraseWords': passphraseWords,
+    });
     return Player(id: playerId, name: name, role: PlayerRole.villager, joinedAt: DateTime.now());
+  }
+
+  @override
+  Future<bool> verifyPassphrase({
+    required String gameId,
+    required List<String> words,
+  }) async {
+    final result = await _call('verifyCasePassphrase', {'gameId': gameId, 'words': words});
+    return result['matches'] as bool;
   }
 
   @override
@@ -344,6 +364,7 @@ class FirebaseGameRepository implements GameRepository {
           ? null
           : GameWinner.values.byName(data['winner'] as String),
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      isRestricted: data['isRestricted'] as bool? ?? false,
     );
   }
 

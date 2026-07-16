@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../design/colors.dart';
 import '../../design/spacing.dart';
 import '../../design/typography.dart';
+import '../../domain/passphrase_words.dart';
 import '../../domain/repositories/auth_service.dart';
 import '../../domain/repositories/game_repository.dart';
 import '../common/dossier_card.dart';
@@ -35,6 +36,7 @@ class _CaseCreationScreenState extends State<CaseCreationScreen> {
   // default. Optional: shown to a prospective player before they join, but
   // blank is a normal case, not an error.
   final _rulesController = TextEditingController();
+  bool _isRestricted = false;
 
   @override
   void initState() {
@@ -133,6 +135,10 @@ class _CaseCreationScreenState extends State<CaseCreationScreen> {
   Future<void> _create() async {
     final repo = context.read<GameRepository>();
     final roster = _expectedRoster();
+    // Generated here (not by the repository) since the creator is the one
+    // who has to actually relay these to whoever they want to invite — see
+    // generatePassphraseWords' doc comment.
+    final passphraseWords = _isRestricted ? generatePassphraseWords() : null;
     try {
       final game = await repo.createGame(
         locationTag:
@@ -145,7 +151,13 @@ class _CaseCreationScreenState extends State<CaseCreationScreen> {
         executionWindow: const Duration(hours: 1),
         dailyCutoffTime: _parseDailyCutoff(_dailyCutoffController.text),
         rulesDescription: _rulesController.text.trim(),
+        isRestricted: _isRestricted,
+        passphraseWords: passphraseWords,
       );
+      if (!mounted) return;
+      if (passphraseWords != null) {
+        await _showPassphraseRevealDialog(passphraseWords);
+      }
       if (!mounted) return;
       Navigator.of(context).pushReplacement(MaterialPageRoute(
         builder: (_) => GameScreen(gameId: game.id, playerId: widget.creator.id),
@@ -154,6 +166,55 @@ class _CaseCreationScreenState extends State<CaseCreationScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     }
+  }
+
+  /// Shown once, right after a restricted case is actually created — this
+  /// is the only place these words are ever displayed; nothing in the app
+  /// resurfaces them later (see firestore.rules' `passphrase` comment), so
+  /// the creator has to relay them out of band (in person, chat, whatever)
+  /// before closing this. Not barrier-dismissible for the same reason the
+  /// moment dialogs aren't: a word only shown for a blink because of a
+  /// stray tap isn't actually shown.
+  Future<void> _showPassphraseRevealDialog(List<String> words) {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Share this passphrase'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "Whoever you want to join needs all 3 of these words (order doesn't matter) "
+              'to get in — this is the only time the app shows them.',
+              style: AppTypography.bodySmall,
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.md),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceRaised,
+                borderRadius: BorderRadius.circular(AppRadii.sm),
+                border: Border.all(color: AppColors.borderHairline),
+              ),
+              child: Text(
+                words.join('   '),
+                textAlign: TextAlign.center,
+                style: AppTypography.data.copyWith(color: AppColors.brass, fontSize: 20),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text("I've shared it"),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -213,6 +274,39 @@ class _CaseCreationScreenState extends State<CaseCreationScreen> {
                   Text(
                     'Optional — shown to anyone browsing this case before they join.',
                     style: AppTypography.dataSmall,
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  InkWell(
+                    onTap: () => setState(() => _isRestricted = !_isRestricted),
+                    borderRadius: BorderRadius.circular(AppRadii.sm),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Checkbox(
+                          key: const ValueKey('restricted_case_checkbox'),
+                          value: _isRestricted,
+                          onChanged: (value) => setState(() => _isRestricted = value ?? false),
+                        ),
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: AppSpacing.md),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Restricted case', style: AppTypography.body),
+                                const SizedBox(height: AppSpacing.xs),
+                                Text(
+                                  'Generates a 3-word passphrase you share yourself — anyone '
+                                  "browsing sees it's restricted, but needs all 3 words to see "
+                                  'the roster or join.',
+                                  style: AppTypography.dataSmall,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: AppSpacing.lg),
                   ElevatedButton(onPressed: _create, child: const Text('Open the case')),
