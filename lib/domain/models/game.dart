@@ -93,6 +93,15 @@ class Game {
 
   final DateTime createdAt;
 
+  /// True if this case requires a 3-word passphrase to get past its
+  /// [CaseDetailsScreen] and actually join — the passphrase itself never
+  /// lives on this model (or anywhere else a prospective, not-yet-joined
+  /// player can read): `GameRepository.verifyPassphrase` and the
+  /// [addPlayer] passphrase check are the only ways to test it. This flag
+  /// alone is what the case list badges as "Restricted" so prospective
+  /// players know to ask for it before tapping in.
+  final bool isRestricted;
+
   const Game({
     required this.id,
     required this.locationTag,
@@ -113,6 +122,7 @@ class Game {
     this.recruitmentSignConfirmed = false,
     this.winner,
     required this.createdAt,
+    this.isRestricted = false,
   });
 
   Player? playerById(String playerId) {
@@ -197,6 +207,7 @@ class Game {
           recruitmentSignConfirmed ?? this.recruitmentSignConfirmed,
       winner: winner ?? this.winner,
       createdAt: createdAt,
+      isRestricted: isRestricted,
     );
   }
 }

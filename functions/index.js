@@ -4,8 +4,15 @@ const { getAuth } = require("firebase-admin/auth");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 
-const { STARTING_VOTE_WEIGHT, requireString, requirePositiveInt, requireAuth, shuffle } =
-  require("./lib/shared");
+const {
+  STARTING_VOTE_WEIGHT,
+  requireString,
+  requirePositiveInt,
+  requireAuth,
+  shuffle,
+  normalizeWords,
+  sameWords,
+} = require("./lib/shared");
 
 // Must run before requiring ./lib/roundResolution — that module calls
 // getFirestore() at its own top level, which throws "no app" if the
@@ -83,6 +90,7 @@ exports.createGame = onCall(async (request) => {
     ? data.dailyCutoffSeconds
     : 17 * 3600;
   const rulesDescription = typeof data.rulesDescription === "string" ? data.rulesDescription : "";
+  const isRestricted = data.isRestricted === true;
   // A case name can be reused once the earlier case with that name has
   // ended, but two simultaneously open cases sharing a name would be
   // ambiguous in "Find your case" — mirrors LocalGameRepository.createGame's
@@ -90,6 +98,18 @@ exports.createGame = onCall(async (request) => {
   // case-sensitive, so the normalized form is stored alongside the real
   // locationTag purely for this lookup.
   const locationTagNormalized = locationTag.trim().toLowerCase();
+
+  // Not stored on the game doc itself (that's readable by any signed-in
+  // user browsing "Find your case" — see firestore.rules' `games` comment)
+  // — this lives in a subcollection locked down to Cloud-Functions-only,
+  // same reasoning as `reports`.
+  const normalizedPassphrase = isRestricted ? normalizeWords(data.passphraseWords) : null;
+  if (isRestricted && normalizedPassphrase.length !== 3) {
+    throw new HttpsError(
+      "invalid-argument",
+      "A restricted case needs exactly 3 distinct passphrase words."
+    );
+  }
 
   const gameRef = db.collection("games").doc();
   const playerRef = gameRef.collection("players").doc(creatorId);
@@ -124,8 +144,12 @@ exports.createGame = onCall(async (request) => {
       recruitmentSignConfirmed: false,
       winner: null,
       createdAt: FieldValue.serverTimestamp(),
+      isRestricted,
     });
     tx.set(playerRef, newPlayerDoc(creatorName));
+    if (isRestricted) {
+      tx.set(gameRef.collection("passphrase").doc("secret"), { words: normalizedPassphrase });
+    }
   });
 
   // Covers the edge case where minPlayers is already met the moment the
@@ -141,9 +165,11 @@ exports.addPlayer = onCall(async (request) => {
   const gameId = requireString(data.gameId, "gameId");
   const playerId = requireString(data.playerId, "playerId");
   const name = requireString(data.name, "name");
+  const providedWords = normalizeWords(data.passphraseWords);
 
   const gameRef = db.collection("games").doc(gameId);
   const playerRef = gameRef.collection("players").doc(playerId);
+  const passphraseRef = gameRef.collection("passphrase").doc("secret");
 
   await db.runTransaction(async (tx) => {
     const gameSnap = await tx.get(gameRef);
@@ -152,6 +178,17 @@ exports.addPlayer = onCall(async (request) => {
     }
     if (gameSnap.data().status === "ended") {
       throw new HttpsError("failed-precondition", "This case has already ended.");
+    }
+
+    // Checked before anything else — a wrong or missing passphrase should
+    // learn nothing about the roster (not even "that name's taken"), same
+    // ordering as LocalGameRepository.addPlayer.
+    if (gameSnap.data().isRestricted) {
+      const passphraseSnap = await tx.get(passphraseRef);
+      const actualWords = passphraseSnap.data()?.words || [];
+      if (!sameWords(providedWords, actualWords)) {
+        throw new HttpsError("failed-precondition", "Incorrect passphrase.");
+      }
     }
 
     const existing = await tx.get(playerRef);
@@ -181,6 +218,30 @@ exports.addPlayer = onCall(async (request) => {
   await maybeActivateGame(gameRef);
 
   return { playerId };
+});
+
+// The pre-join UI gate for a restricted case (unlocks CaseDetailsScreen) —
+// read-only, never grants membership on its own. addPlayer re-checks the
+// same passphrase independently, so a client that skips straight to
+// addPlayer without ever calling this still can't get in without the
+// actual words.
+exports.verifyCasePassphrase = onCall(async (request) => {
+  requireAuth(request);
+  const data = request.data || {};
+  const gameId = requireString(data.gameId, "gameId");
+  const providedWords = normalizeWords(data.words);
+
+  const gameSnap = await db.collection("games").doc(gameId).get();
+  if (!gameSnap.exists) {
+    throw new HttpsError("not-found", `Game ${gameId} not found`);
+  }
+  if (!gameSnap.data().isRestricted) {
+    return { matches: true };
+  }
+
+  const passphraseSnap = await db.collection("games").doc(gameId).collection("passphrase").doc("secret").get();
+  const actualWords = passphraseSnap.data()?.words || [];
+  return { matches: sameWords(providedWords, actualWords) };
 });
 
 // Debug role switcher only — createGame/addPlayer already auto-start via

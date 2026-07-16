@@ -35,10 +35,26 @@ function shuffle(items) {
   return items;
 }
 
+// Trimmed + lowercased + deduped, so "Tiger"/" tiger "/"TIGER" all match and
+// order never matters — mirrors LocalGameRepository's `_normalizeWords`
+// exactly (restricted-case passphrase comparison).
+function normalizeWords(words) {
+  return [...new Set((words || []).map((w) => String(w).trim().toLowerCase()).filter((w) => w))];
+}
+
+function sameWords(a, b) {
+  const setA = new Set(a);
+  const setB = new Set(b);
+  if (setA.size !== setB.size) return false;
+  return [...setA].every((w) => setB.has(w));
+}
+
 module.exports = {
   STARTING_VOTE_WEIGHT,
   requireString,
   requirePositiveInt,
   requireAuth,
   shuffle,
+  normalizeWords,
+  sameWords,
 };

@@ -96,8 +96,29 @@ class _GameRecord {
   final Map<String, Set<String>> blockedByViewer = {};
   final blockChanges = StreamController<void>.broadcast();
 
+  /// Normalized (trimmed, lowercased) passphrase words for a restricted
+  /// case — null for an unrestricted one. Deliberately not exposed via
+  /// the public [Game] model; [LocalGameRepository.verifyPassphrase] and
+  /// [LocalGameRepository.addPlayer] are the only things that ever read
+  /// this.
+  Set<String>? passphraseWords;
+
   _GameRecord(this.game);
 }
+
+/// Dart's `Set` doesn't override `==` to do element-wise comparison (two
+/// different `Set` instances are never `==`, even with identical
+/// contents) — this is the actual passphrase-match check everywhere a
+/// comparison is needed, instead of relying on `set1 == set2`.
+bool _sameWords(Set<String> a, Set<String> b) => a.length == b.length && a.containsAll(b);
+
+/// Trimmed + lowercased, so "Tiger", " tiger ", and "TIGER" all match —
+/// same case/whitespace-insensitive treatment this codebase already gives
+/// case names and player names.
+Set<String> _normalizeWords(Iterable<String> words) => words
+    .map((w) => w.trim().toLowerCase())
+    .where((w) => w.isNotEmpty)
+    .toSet();
 
 /// Full in-memory implementation of every rule in
 /// `office_game_concept_season1.md`: vote-weight erosion, elimination
@@ -230,6 +251,8 @@ class LocalGameRepository implements GameRepository {
     Duration executionWindow = const Duration(hours: 1),
     Duration dailyCutoffTime = const Duration(hours: 17),
     String rulesDescription = '',
+    bool isRestricted = false,
+    List<String>? passphraseWords,
   }) async {
     // A case name can be reused once the earlier case with that name has
     // ended, but two simultaneously open cases sharing a name would be
@@ -240,6 +263,10 @@ class LocalGameRepository implements GameRepository {
         r.game.status != GameStatus.ended && r.game.locationTag.trim().toLowerCase() == normalizedTag);
     if (nameTaken) {
       throw StateError('A case named "$locationTag" is already open — choose a different name.');
+    }
+    final normalizedPassphrase = isRestricted ? _normalizeWords(passphraseWords ?? const []) : null;
+    if (isRestricted && normalizedPassphrase!.length != 3) {
+      throw StateError('A restricted case needs exactly 3 distinct passphrase words.');
     }
     final creator = Player(
       id: creatorId,
@@ -258,8 +285,9 @@ class LocalGameRepository implements GameRepository {
       executionWindow: executionWindow,
       dailyCutoffTime: dailyCutoffTime,
       createdAt: DateTime.now(),
+      isRestricted: isRestricted,
     );
-    final record = _GameRecord(game);
+    final record = _GameRecord(game)..passphraseWords = normalizedPassphrase;
     _games[game.id] = record;
     _recordMoment(record, creatorId, GameMomentType.joinedCase, game.currentRound,
         countsAsRoundActivity: false);
@@ -277,9 +305,16 @@ class LocalGameRepository implements GameRepository {
     required String gameId,
     required String playerId,
     required String name,
+    List<String>? passphraseWords,
   }) async {
     final record = _record(gameId);
     _requireGameNotEnded(record.game);
+    // Checked before anything else — a wrong or missing passphrase should
+    // learn nothing about the roster (not even "that name's taken").
+    if (record.game.isRestricted &&
+        !_sameWords(_normalizeWords(passphraseWords ?? const []), record.passphraseWords!)) {
+      throw StateError('Incorrect passphrase.');
+    }
     if (record.game.playerById(playerId) != null) {
       throw StateError('$playerId has already joined this game');
     }
@@ -309,6 +344,16 @@ class LocalGameRepository implements GameRepository {
     // ever call `startGame`.
     _autoStartIfReady(record);
     return player;
+  }
+
+  @override
+  Future<bool> verifyPassphrase({
+    required String gameId,
+    required List<String> words,
+  }) async {
+    final record = _record(gameId);
+    if (!record.game.isRestricted) return true;
+    return _sameWords(_normalizeWords(words), record.passphraseWords!);
   }
 
   @override

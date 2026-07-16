@@ -17,6 +17,88 @@ import '../stats/track_record_screen.dart';
 import 'case_creation_screen.dart';
 import 'case_details_screen.dart';
 
+/// Prompts for a restricted case's 3-word passphrase — returns the words
+/// typed (untrimmed, unnormalized; `GameRepository.verifyPassphrase`/
+/// `addPlayer` do that comparison) or null if cancelled. Order is never
+/// asked for as anything other than 3 blanks side by side; verification
+/// itself is set-based, so which blank each word landed in doesn't matter.
+Future<List<String>?> _showPassphraseEntryDialog(BuildContext context, {required String caseName}) {
+  return showDialog<List<String>>(
+    context: context,
+    builder: (dialogContext) => _PassphraseEntryDialog(caseName: caseName),
+  );
+}
+
+/// The passphrase dialog's content, as its own `State` so its
+/// `TextEditingController`s are disposed when this widget is actually
+/// removed from the tree (once the dialog's dismiss animation finishes) —
+/// disposing them eagerly the instant `showDialog` returns races that
+/// animation and crashes (see game_screen.dart's `_ReportDialog`, which
+/// hit exactly this).
+class _PassphraseEntryDialog extends StatefulWidget {
+  final String caseName;
+
+  const _PassphraseEntryDialog({required this.caseName});
+
+  @override
+  State<_PassphraseEntryDialog> createState() => _PassphraseEntryDialogState();
+}
+
+class _PassphraseEntryDialogState extends State<_PassphraseEntryDialog> {
+  final _controllers = List.generate(3, (_) => TextEditingController());
+
+  @override
+  void dispose() {
+    for (final controller in _controllers) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('"${widget.caseName}" is restricted'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            "Enter the 3-word passphrase to see this case (order doesn't matter).",
+            style: AppTypography.bodySmall,
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          Row(
+            children: [
+              for (var i = 0; i < 3; i++) ...[
+                if (i > 0) const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: TextField(
+                    controller: _controllers[i],
+                    autofocus: i == 0,
+                    textAlign: TextAlign.center,
+                    decoration: InputDecoration(hintText: 'word ${i + 1}'),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(_controllers.map((c) => c.text).toList()),
+          child: const Text('Unlock'),
+        ),
+      ],
+    );
+  }
+}
+
 /// "17:00"-style plain-date fallback for anything more than a week old —
 /// mirrors game_screen.dart's `_formatTimeOfDay` in spirit (hand-rolled,
 /// no `intl` dependency for one string).
@@ -133,14 +215,21 @@ class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
   /// `CaseDetailsScreen`, so that screen's own frame doesn't linger on
   /// the back stack once you're actually in the case (back from
   /// `GameScreen` should return straight to "Find your case", the same
-  /// as the direct "Enter" path below does).
-  Future<void> _joinAndEnter(Game game, {bool replace = false}) async {
+  /// as the direct "Enter" path below does). [passphraseWords] only
+  /// matters for a not-yet-joined restricted case — already-joined cases
+  /// never need it again (`addPlayer` isn't even called for them).
+  Future<void> _joinAndEnter(Game game, {List<String>? passphraseWords, bool replace = false}) async {
     final user = _user!;
     final repo = context.read<GameRepository>();
     final alreadyJoined = game.players.any((p) => p.id == user.id);
     if (!alreadyJoined) {
       try {
-        await repo.addPlayer(gameId: game.id, playerId: user.id, name: user.displayName);
+        await repo.addPlayer(
+          gameId: game.id,
+          playerId: user.id,
+          name: user.displayName,
+          passphraseWords: passphraseWords,
+        );
       } on StateError catch (e) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
@@ -166,11 +255,34 @@ class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
     ));
   }
 
-  void _openDetails(Game game) {
+  void _openDetails(Game game, {List<String>? passphraseWords}) {
     Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) =>
-          CaseDetailsScreen(game: game, onJoin: () => _joinAndEnter(game, replace: true)),
+      builder: (_) => CaseDetailsScreen(
+        game: game,
+        onJoin: () => _joinAndEnter(game, passphraseWords: passphraseWords, replace: true),
+      ),
     ));
+  }
+
+  /// Tapping a not-yet-joined restricted case: prompts for its 3 words,
+  /// checks them with [GameRepository.verifyPassphrase] (read-only — see
+  /// that method's doc), and only opens the details screen on a match.
+  /// Cancelling the dialog (returns null) just does nothing, same as
+  /// tapping outside any other non-committal dialog in this app.
+  Future<void> _unlockRestrictedCase(Game game) async {
+    final words = await _showPassphraseEntryDialog(context, caseName: game.locationTag);
+    if (words == null) return;
+    if (!mounted) return;
+    final repo = context.read<GameRepository>();
+    final matches = await repo.verifyPassphrase(gameId: game.id, words: words);
+    if (!mounted) return;
+    if (!matches) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Incorrect passphrase.')),
+      );
+      return;
+    }
+    _openDetails(game, passphraseWords: words);
   }
 
   @override
@@ -266,12 +378,15 @@ class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
                   game: game,
                   selfId: user.id,
                   // Already-joined cases still go straight back in
-                  // (unchanged — TESTING.md §0.9); a case you haven't
-                  // joined opens its details screen first instead of
-                  // joining immediately.
+                  // (unchanged — TESTING.md §0.9); a not-yet-joined
+                  // restricted case is gated behind its passphrase first;
+                  // any other not-yet-joined case opens its details screen
+                  // directly, same as before.
                   onTap: game.players.any((p) => p.id == user.id)
                       ? () => _joinAndEnter(game)
-                      : () => _openDetails(game),
+                      : (game.isRestricted
+                          ? () => _unlockRestrictedCase(game)
+                          : () => _openDetails(game)),
                 ),
                 const SizedBox(height: AppSpacing.sm),
               ],
@@ -317,11 +432,22 @@ class _GameListTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(game.locationTag, style: AppTypography.heading),
+                Row(
+                  children: [
+                    if (game.isRestricted) ...[
+                      Icon(PhosphorIconsLight.lock, size: 15, color: AppColors.brass),
+                      const SizedBox(width: AppSpacing.xs),
+                    ],
+                    Expanded(child: Text(game.locationTag, style: AppTypography.heading)),
+                  ],
+                ),
                 const SizedBox(height: AppSpacing.xs),
                 Text(
-                  '${game.status.name} · round ${game.currentRound} · '
-                  '${game.players.length}/${game.minPlayers} players',
+                  game.isRestricted
+                      ? '${game.status.name} · round ${game.currentRound} · '
+                          '${game.players.length}/${game.minPlayers} players · Restricted'
+                      : '${game.status.name} · round ${game.currentRound} · '
+                          '${game.players.length}/${game.minPlayers} players',
                   style: AppTypography.bodySmall,
                 ),
                 const SizedBox(height: AppSpacing.xs),
@@ -334,7 +460,9 @@ class _GameListTile extends StatelessWidget {
           ),
           OutlinedButton(
             onPressed: canTap ? onTap : null,
-            child: Text(alreadyJoined ? 'Enter' : (ended ? 'Closed' : 'Join')),
+            child: Text(alreadyJoined
+                ? 'Enter'
+                : (ended ? 'Closed' : (game.isRestricted ? 'Unlock' : 'Join'))),
           ),
         ],
       ),

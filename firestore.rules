@@ -46,6 +46,17 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      match /passphrase/{doc} {
+        // A restricted case's actual passphrase — never client-readable
+        // at all, unlike every other collection above: revealing it would
+        // let anyone browsing "Find your case" bypass the point of
+        // marking a case restricted in the first place. Only
+        // addPlayer/verifyCasePassphrase (Admin SDK bypass) ever touch
+        // this.
+        allow read: if false;
+        allow write: if false;
+      }
+
       match /publicPlayers/{playerId} {
         // Deliberately not membership-gated, unlike the other subcollections
         // below: CaseDetailsScreen shows a game's roster before joining

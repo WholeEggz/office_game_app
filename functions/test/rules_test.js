@@ -112,6 +112,9 @@ async function main() {
     await db.collection(`games/${GAME_ID}/blocks`).doc("villagerA").set({
       blockedPlayerIds: ["mafiaB"],
     });
+    await db.collection(`games/${GAME_ID}/passphrase`).doc("secret").set({
+      words: ["tiger", "blue", "moon"],
+    });
   });
 
   const villagerA = env.authenticatedContext("villagerA").firestore();
@@ -304,6 +307,24 @@ async function main() {
     assertFails(anon.doc("users/villagerA").get())
   );
 
+  // --- passphrase: a restricted case's actual words, never client-
+  // readable at all, even by the case's own members — only
+  // addPlayer/verifyCasePassphrase (Admin SDK bypass) ever touch this. ---
+  await check("member reads the case passphrase: DENIED", () =>
+    assertFails(villagerA.doc(`games/${GAME_ID}/passphrase/secret`).get())
+  );
+  await check("outsider reads the case passphrase: DENIED", () =>
+    assertFails(outsider.doc(`games/${GAME_ID}/passphrase/secret`).get())
+  );
+  await check("unauthenticated reads the case passphrase: DENIED", () =>
+    assertFails(anon.doc(`games/${GAME_ID}/passphrase/secret`).get())
+  );
+  await check("client cannot write the case passphrase directly: DENIED", () =>
+    assertFails(
+      villagerA.doc(`games/${GAME_ID}/passphrase/secret`).set({ words: ["a", "b", "c"] })
+    )
+  );
+
   const failed = results.filter((r) => !r.ok);
   for (const r of results) {
     console.log(`${r.ok ? "PASS" : "FAIL"} — ${r.name}`);
@@ -332,6 +353,7 @@ async function main() {
       `games/${GAME_ID}/reports/report1`,
       `games/${GAME_ID}/reports/report2`,
       `games/${GAME_ID}/blocks/villagerA`,
+      `games/${GAME_ID}/passphrase/secret`,
       `games/${GAME_ID}`,
       "users/villagerA",
     ];
