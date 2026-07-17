@@ -1,0 +1,8 @@
+# Copy this file to android/key.properties (gitignored) and fill in real
+# values. storeFile is relative to android/app/ if not absolute — the
+# simplest approach is dropping the .jks/.keystore file into android/app/
+# and pointing storeFile at its filename.
+storePassword=REPLACE_ME
+keyPassword=REPLACE_ME
+keyAlias=REPLACE_ME
+storeFile=REPLACE_ME.jks

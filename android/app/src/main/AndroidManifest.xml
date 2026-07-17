@@ -1,6 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
-        android:label="office_game_app"
+        android:label="OfficeGames"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon">
         <activity
