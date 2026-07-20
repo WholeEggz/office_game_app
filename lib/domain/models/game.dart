@@ -102,6 +102,11 @@ class Game {
   /// players know to ask for it before tapping in.
   final bool isRestricted;
 
+  /// The player who created this case — acts as its admin (e.g. the only
+  /// one who can look up a restricted case's passphrase again after
+  /// creation). Never changes after creation.
+  final String creatorId;
+
   const Game({
     required this.id,
     required this.locationTag,
@@ -123,6 +128,7 @@ class Game {
     this.winner,
     required this.createdAt,
     this.isRestricted = false,
+    required this.creatorId,
   });
 
   Player? playerById(String playerId) {
@@ -208,6 +214,7 @@ class Game {
       winner: winner ?? this.winner,
       createdAt: createdAt,
       isRestricted: isRestricted,
+      creatorId: creatorId,
     );
   }
 }

@@ -6,6 +6,7 @@ import 'package:office_game_app/domain/repositories/auth_service.dart';
 import 'package:office_game_app/domain/repositories/game_repository.dart';
 import 'package:office_game_app/ui/entry/case_creation_screen.dart';
 import 'package:office_game_app/ui/entry/player_entry_screen.dart';
+import 'package:office_game_app/ui/game/game_screen.dart';
 import 'package:provider/provider.dart';
 
 void main() {
@@ -112,6 +113,38 @@ void main() {
         creatorName: 'Creator2',
       );
       expect(await repo.verifyPassphrase(gameId: open.id, words: []), isTrue);
+    });
+
+    test('fetchGamePassphrase only returns the words to the case\'s own creator', () async {
+      final repo = LocalGameRepository();
+      final restricted = await repo.createGame(
+        locationTag: 'Restricted Case',
+        minPlayers: 4,
+        creatorId: 'creator',
+        creatorName: 'Creator',
+        isRestricted: true,
+        passphraseWords: ['tiger', 'blue', 'moon'],
+      );
+      expect(restricted.creatorId, 'creator');
+
+      final creatorWords =
+          await repo.fetchGamePassphrase(gameId: restricted.id, playerId: 'creator');
+      expect(creatorWords, unorderedEquals(['tiger', 'blue', 'moon']));
+
+      final otherWords =
+          await repo.fetchGamePassphrase(gameId: restricted.id, playerId: 'someone-else');
+      expect(otherWords, isNull);
+
+      final open = await repo.createGame(
+        locationTag: 'Open Case',
+        minPlayers: 4,
+        creatorId: 'creator2',
+        creatorName: 'Creator2',
+      );
+      expect(
+        await repo.fetchGamePassphrase(gameId: open.id, playerId: 'creator2'),
+        isNull,
+      );
     });
   });
 
@@ -249,6 +282,69 @@ void main() {
       final user = auth.currentUser!;
       final game = (await repo.watchGames(viewerId: user.id).first).single;
       expect(game.players.map((p) => p.id), contains(user.id));
+    });
+  });
+
+  group('GameScreen admin display', () {
+    testWidgets(
+        'the creator sees an Admin label and the case pass; another player sees neither',
+        (tester) async {
+      final repo = LocalGameRepository();
+      final game = await repo.createGame(
+        locationTag: 'Admin Test Floor',
+        minPlayers: 4,
+        creatorId: 'creator',
+        creatorName: 'Creator',
+        isRestricted: true,
+        passphraseWords: ['tiger', 'blue', 'moon'],
+      );
+      await repo.addPlayer(
+        gameId: game.id,
+        playerId: 'p2',
+        name: 'Bob',
+        passphraseWords: ['tiger', 'blue', 'moon'],
+      );
+
+      await tester.pumpWidget(Provider<GameRepository>.value(
+        value: repo,
+        child: MaterialApp(home: GameScreen(gameId: game.id, playerId: 'creator')),
+      ));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('· Admin'), findsOneWidget);
+      expect(find.text('Share with a new joiner: tiger · blue · moon'), findsOneWidget);
+    });
+
+    testWidgets('a non-creator player sees neither the Admin label nor the case pass',
+        (tester) async {
+      final repo = LocalGameRepository();
+      final game = await repo.createGame(
+        locationTag: 'Admin Test Floor 2',
+        minPlayers: 4,
+        creatorId: 'creator',
+        creatorName: 'Creator',
+        isRestricted: true,
+        passphraseWords: ['tiger', 'blue', 'moon'],
+      );
+      await repo.addPlayer(
+        gameId: game.id,
+        playerId: 'p2',
+        name: 'Bob',
+        passphraseWords: ['tiger', 'blue', 'moon'],
+      );
+
+      await tester.pumpWidget(Provider<GameRepository>.value(
+        value: repo,
+        child: MaterialApp(home: GameScreen(gameId: game.id, playerId: 'p2')),
+      ));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('· Admin'), findsNothing);
+      expect(find.textContaining('Share with a new joiner'), findsNothing);
     });
   });
 }

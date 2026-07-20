@@ -90,11 +90,30 @@ async function main() {
     passphraseWords: ["Tiger", " blue ", "MOON"],
   });
 
-  // The actual words are never client-readable — checked via the Admin
-  // SDK, since firestore.rules denies all client reads on this collection.
+  // The actual words are never client-readable by anyone but the case's
+  // own creator — checked via the Admin SDK, since firestore.rules is
+  // what gates client reads on this collection.
   const passphraseSnap = await db.collection(`games/${gameId}/passphrase`).doc("secret").get();
   assert.deepEqual(passphraseSnap.data().words.sort(), ["blue", "moon", "tiger"]);
-  console.log("PASS: the passphrase is stored normalized, not client-readable");
+  console.log("PASS: the passphrase is stored normalized");
+
+  const gameSnap = await db.collection("games").doc(gameId).get();
+  assert.equal(gameSnap.data().creatorId, creator.uid);
+  console.log("PASS: the game doc records its creatorId");
+
+  console.log("\n--- passphrase read access (firestore.rules) ---");
+  const readPassphraseAs = async (idToken) =>
+    fetch(
+      `http://127.0.0.1:8080/v1/projects/${PROJECT_ID}/databases/(default)/documents/games/${gameId}/passphrase/secret`,
+      { headers: { Authorization: `Bearer ${idToken}` } }
+    );
+  const creatorRead = await readPassphraseAs(creator.idToken);
+  assert.equal(creatorRead.status, 200);
+  console.log("PASS: the creator (admin) can read their own case's passphrase");
+
+  const joinerRead = await readPassphraseAs(joiner.idToken);
+  assert.equal(joinerRead.status, 403);
+  console.log("PASS: a non-creator is still denied");
 
   console.log("\n--- verifyCasePassphrase ---");
   const wrongCheck = await callCallable("verifyCasePassphrase", joiner.idToken, {

@@ -977,9 +977,16 @@ class _DashboardState extends State<_Dashboard> {
               ),
               const SizedBox(height: AppSpacing.md),
               Text(
-                '${game.locationTag} · round ${game.currentRound} · ${game.status.name}',
+                self.id == game.creatorId
+                    ? '${game.locationTag} · round ${game.currentRound} · '
+                        '${game.status.name} · Admin'
+                    : '${game.locationTag} · round ${game.currentRound} · ${game.status.name}',
                 style: AppTypography.dataSmall,
               ),
+              if (self.id == game.creatorId && game.isRestricted) ...[
+                const SizedBox(height: AppSpacing.md),
+                _AdminPassphraseCard(gameId: gameId, playerId: self.id),
+              ],
               // Both debug-only controls below were previously rendered
               // unconditionally in every build — a real release would
               // have let any player flip a switch to see every hidden
@@ -1111,6 +1118,62 @@ class _DashboardState extends State<_Dashboard> {
           );
         },
       ),
+    );
+  }
+}
+
+/// Shown only to a restricted case's creator (its admin) — lets them look
+/// the passphrase back up to repeat it to a coworker, since the only other
+/// place it's ever shown is the one-time reveal dialog at case creation.
+class _AdminPassphraseCard extends StatefulWidget {
+  final String gameId;
+  final String playerId;
+
+  const _AdminPassphraseCard({required this.gameId, required this.playerId});
+
+  @override
+  State<_AdminPassphraseCard> createState() => _AdminPassphraseCardState();
+}
+
+class _AdminPassphraseCardState extends State<_AdminPassphraseCard> {
+  Future<List<String>?>? _wordsFuture;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _wordsFuture ??= context.read<GameRepository>().fetchGamePassphrase(
+          gameId: widget.gameId,
+          playerId: widget.playerId,
+        );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<String>?>(
+      future: _wordsFuture,
+      builder: (context, snapshot) {
+        final words = snapshot.data;
+        if (words == null || words.isEmpty) return const SizedBox.shrink();
+        return DossierCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(PhosphorIconsLight.lock, size: 20, color: AppColors.textSecondary),
+                  const SizedBox(width: AppSpacing.sm),
+                  Text('Case pass', style: AppTypography.heading),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                'Share with a new joiner: ${words.join(' · ')}',
+                style: AppTypography.body,
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

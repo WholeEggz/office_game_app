@@ -53,6 +53,7 @@ async function main() {
       status: "active",
       minPlayers: 3,
       currentRound: 1,
+      creatorId: "villagerA",
     });
     await db.collection(`games/${GAME_ID}/players`).doc("villagerA").set({
       name: "Alice",
@@ -307,11 +308,15 @@ async function main() {
     assertFails(anon.doc("users/villagerA").get())
   );
 
-  // --- passphrase: a restricted case's actual words, never client-
-  // readable at all, even by the case's own members — only
-  // addPlayer/verifyCasePassphrase (Admin SDK bypass) ever touch this. ---
-  await check("member reads the case passphrase: DENIED", () =>
-    assertFails(villagerA.doc(`games/${GAME_ID}/passphrase/secret`).get())
+  // --- passphrase: a restricted case's actual words, client-readable only
+  // by the case's own creator (its admin, villagerA per the seed above) —
+  // every other member/outsider/anon is still denied. Nothing but Admin
+  // SDK writes (addPlayer/createGame) ever touches this. ---
+  await check("the case's creator reads the case passphrase: allowed", () =>
+    assertSucceeds(villagerA.doc(`games/${GAME_ID}/passphrase/secret`).get())
+  );
+  await check("a non-creator member reads the case passphrase: DENIED", () =>
+    assertFails(mafiaB.doc(`games/${GAME_ID}/passphrase/secret`).get())
   );
   await check("outsider reads the case passphrase: DENIED", () =>
     assertFails(outsider.doc(`games/${GAME_ID}/passphrase/secret`).get())

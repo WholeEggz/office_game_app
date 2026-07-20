@@ -47,13 +47,15 @@ service cloud.firestore {
       }
 
       match /passphrase/{doc} {
-        // A restricted case's actual passphrase — never client-readable
-        // at all, unlike every other collection above: revealing it would
-        // let anyone browsing "Find your case" bypass the point of
-        // marking a case restricted in the first place. Only
-        // addPlayer/verifyCasePassphrase (Admin SDK bypass) ever touch
-        // this.
-        allow read: if false;
+        // A restricted case's actual passphrase — client-readable only by
+        // the case's own creator (its admin), who can look it back up to
+        // repeat it to a coworker after the one-time reveal at creation.
+        // Anyone else browsing "Find your case" still can't read this, so
+        // the point of marking a case restricted holds for everyone but
+        // the person who set it. addPlayer/verifyCasePassphrase (Admin SDK
+        // bypass) remain the only things that check it against a guess.
+        allow read: if isSignedIn() &&
+          get(/databases/$(database)/documents/games/$(gameId)).data.creatorId == request.auth.uid;
         allow write: if false;
       }
 

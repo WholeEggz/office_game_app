@@ -118,6 +118,7 @@ class FirebaseGameRepository implements GameRepository {
       dailyCutoffTime: dailyCutoffTime,
       createdAt: DateTime.now(),
       isRestricted: isRestricted,
+      creatorId: creatorId,
     );
   }
 
@@ -144,6 +145,23 @@ class FirebaseGameRepository implements GameRepository {
   }) async {
     final result = await _call('verifyCasePassphrase', {'gameId': gameId, 'words': words});
     return result['matches'] as bool;
+  }
+
+  /// Reads `passphrase/secret` directly — firestore.rules only grants read
+  /// access to the case's own creator, so a non-creator's read is denied
+  /// by the rules themselves rather than by any client-side check here.
+  @override
+  Future<List<String>?> fetchGamePassphrase({
+    required String gameId,
+    required String playerId,
+  }) async {
+    try {
+      final snap = await _games.doc(gameId).collection('passphrase').doc('secret').get();
+      return (snap.data()?['words'] as List<dynamic>?)?.cast<String>();
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') return null;
+      rethrow;
+    }
   }
 
   @override
@@ -365,6 +383,7 @@ class FirebaseGameRepository implements GameRepository {
           : GameWinner.values.byName(data['winner'] as String),
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       isRestricted: data['isRestricted'] as bool? ?? false,
+      creatorId: data['creatorId'] as String? ?? '',
     );
   }
 

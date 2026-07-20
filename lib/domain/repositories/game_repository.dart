@@ -75,6 +75,16 @@ abstract class GameRepository {
     required List<String> words,
   });
 
+  /// The actual passphrase words for a restricted case — only ever
+  /// returns non-null for the case's own creator ([Game.creatorId]);
+  /// null for anyone else, or for an unrestricted case. Lets the admin
+  /// look the pass back up (e.g. to repeat it to a new coworker) after
+  /// the one-time reveal at creation.
+  Future<List<String>?> fetchGamePassphrase({
+    required String gameId,
+    required String playerId,
+  });
+
   /// Voluntarily removes [playerId] from active play — they stop
   /// counting toward votes, elimination/recruitment targets, and (if
   /// mafia) coordination or proposal-agreement gating, but stay in

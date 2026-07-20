@@ -145,6 +145,7 @@ exports.createGame = onCall(async (request) => {
       winner: null,
       createdAt: FieldValue.serverTimestamp(),
       isRestricted,
+      creatorId,
     });
     tx.set(playerRef, newPlayerDoc(creatorName));
     if (isRestricted) {

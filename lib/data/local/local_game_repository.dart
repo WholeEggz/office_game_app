@@ -286,6 +286,7 @@ class LocalGameRepository implements GameRepository {
       dailyCutoffTime: dailyCutoffTime,
       createdAt: DateTime.now(),
       isRestricted: isRestricted,
+      creatorId: creatorId,
     );
     final record = _GameRecord(game)..passphraseWords = normalizedPassphrase;
     _games[game.id] = record;
@@ -354,6 +355,16 @@ class LocalGameRepository implements GameRepository {
     final record = _record(gameId);
     if (!record.game.isRestricted) return true;
     return _sameWords(_normalizeWords(words), record.passphraseWords!);
+  }
+
+  @override
+  Future<List<String>?> fetchGamePassphrase({
+    required String gameId,
+    required String playerId,
+  }) async {
+    final record = _record(gameId);
+    if (!record.game.isRestricted || record.game.creatorId != playerId) return null;
+    return record.passphraseWords!.toList();
   }
 
   @override
