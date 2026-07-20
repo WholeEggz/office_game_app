@@ -7,6 +7,9 @@ import '../../design/colors.dart';
 import '../../design/spacing.dart';
 import '../../design/typography.dart';
 import '../../domain/models/game_moment.dart';
+import '../../domain/models/player.dart';
+import '../common/noir_copy.dart';
+import '../common/role_badge.dart';
 
 enum _MomentTone {
   celebratory,
@@ -130,15 +133,24 @@ List<GameMoment> selectMomentsToShow(List<GameMoment> moments) {
 /// Shows [moments] as a sequence of dismiss-to-continue dialogs, one at a
 /// time — call [selectMomentsToShow] first if the caller hasn't already.
 /// Each dialog is deliberately not barrier-dismissible: a queue you can
-/// accidentally tap your way past isn't really a queue.
-Future<void> presentMoments(BuildContext context, List<GameMoment> moments) async {
+/// accidentally tap your way past isn't really a queue. [selfRole] only
+/// actually renders for [GameMomentType.joinedCase] (see [_MomentDialogCard]) —
+/// there used to be a separate full-screen role-reveal ceremony gating
+/// every single entry to a case, not just the first; folding its content
+/// into this one-time moment instead means a returning player's every
+/// later visit goes straight to the dashboard, no extra tap.
+Future<void> presentMoments(
+  BuildContext context,
+  List<GameMoment> moments, {
+  required PlayerRole selfRole,
+}) async {
   for (final moment in moments) {
     if (!context.mounted) return;
-    await _showMomentDialog(context, moment);
+    await _showMomentDialog(context, moment, selfRole);
   }
 }
 
-Future<void> _showMomentDialog(BuildContext context, GameMoment moment) async {
+Future<void> _showMomentDialog(BuildContext context, GameMoment moment, PlayerRole selfRole) async {
   final copy = _copyFor(moment.type, moment.round);
   switch (copy.tone) {
     case _MomentTone.celebratory:
@@ -162,6 +174,7 @@ Future<void> _showMomentDialog(BuildContext context, GameMoment moment) async {
     barrierDismissible: false,
     builder: (context) => _MomentDialogCard(
       copy: copy,
+      role: moment.type == GameMomentType.joinedCase ? selfRole : null,
       onDismiss: () => Navigator.of(context).pop(),
     ),
   );
@@ -169,9 +182,10 @@ Future<void> _showMomentDialog(BuildContext context, GameMoment moment) async {
 
 class _MomentDialogCard extends StatelessWidget {
   final _MomentCopy copy;
+  final PlayerRole? role;
   final VoidCallback onDismiss;
 
-  const _MomentDialogCard({required this.copy, required this.onDismiss});
+  const _MomentDialogCard({required this.copy, this.role, required this.onDismiss});
 
   @override
   Widget build(BuildContext context) {
@@ -182,6 +196,74 @@ class _MomentDialogCard extends StatelessWidget {
       _MomentTone.neutral => AppColors.borderStrong,
     };
     final reduceMotion = MediaQuery.of(context).disableAnimations;
+    final role = this.role;
+
+    Widget content;
+    if (role != null) {
+      // The former role-reveal ceremony's own content, folded in here —
+      // badge, noir headline/subtitle — under the moment's usual welcome
+      // title instead of its own generic icon.
+      Widget title = Text(
+        copy.title,
+        style: AppTypography.heading,
+        textAlign: TextAlign.center,
+      );
+      Widget badge = RoleBadge(role: role, size: 64);
+      Widget headline = Text(
+        noirRoleHeadline(role),
+        style: AppTypography.displayMedium,
+        textAlign: TextAlign.center,
+      );
+      Widget subtitle = Text(
+        noirRoleSubtitle(role),
+        style: AppTypography.bodySmall,
+        textAlign: TextAlign.center,
+      );
+      if (!reduceMotion) {
+        badge = badge
+            .animate(onComplete: (_) => HapticFeedback.mediumImpact())
+            .scale(
+              begin: const Offset(0.85, 0.85),
+              end: const Offset(1, 1),
+              duration: AppMotion.ceremonySeal,
+              curve: Curves.easeOutBack,
+            );
+        headline = headline
+            .animate(delay: 150.ms)
+            .fadeIn(duration: AppMotion.ceremonyHeadline)
+            .slideY(begin: 0.15, end: 0, duration: AppMotion.ceremonyHeadline);
+        subtitle = subtitle.animate(delay: 250.ms).fadeIn(duration: AppMotion.ceremonyHeadline);
+      }
+      content = Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          title,
+          const SizedBox(height: AppSpacing.lg),
+          badge,
+          const SizedBox(height: AppSpacing.lg),
+          headline,
+          const SizedBox(height: AppSpacing.sm),
+          subtitle,
+          const SizedBox(height: AppSpacing.md),
+          Text(
+            copy.body,
+            style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      );
+    } else {
+      content = Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(copy.icon, size: 40, color: accent),
+          const SizedBox(height: AppSpacing.md),
+          Text(copy.title, style: AppTypography.displayMedium, textAlign: TextAlign.center),
+          const SizedBox(height: AppSpacing.sm),
+          Text(copy.body, style: AppTypography.bodySmall, textAlign: TextAlign.center),
+        ],
+      );
+    }
 
     Widget card = Container(
       padding: const EdgeInsets.all(AppSpacing.lg),
@@ -193,11 +275,7 @@ class _MomentDialogCard extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(copy.icon, size: 40, color: accent),
-          const SizedBox(height: AppSpacing.md),
-          Text(copy.title, style: AppTypography.displayMedium, textAlign: TextAlign.center),
-          const SizedBox(height: AppSpacing.sm),
-          Text(copy.body, style: AppTypography.bodySmall, textAlign: TextAlign.center),
+          content,
           const SizedBox(height: AppSpacing.lg),
           ElevatedButton(onPressed: onDismiss, child: const Text('Continue')),
         ],

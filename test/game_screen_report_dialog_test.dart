@@ -35,10 +35,7 @@ void main() {
       ),
     ));
     await tester.pump();
-
-    await tester.tap(find.text('Open the case file'));
-    await tester.pump();
-    await tester.pump();
+    await tester.pump(); // one more frame for the joinedCase moment to queue
     while (tester.any(find.text('Continue'))) {
       await tester.tap(find.text('Continue').first);
       await tester.pump();

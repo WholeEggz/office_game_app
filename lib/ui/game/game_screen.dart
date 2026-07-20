@@ -189,11 +189,15 @@ class GameScreen extends StatefulWidget {
 }
 
 class _GameScreenState extends State<GameScreen> {
-  bool _showRoleReveal = true;
   bool _lastKnownUnmasked = false;
   bool _unmaskDialogShown = false;
   StreamSubscription<Game>? _momentsSubscription;
   bool _checkingMoments = false;
+  // Set on every build (see `build()`) so `_checkForMoments` always has the
+  // latest role to hand to `presentMoments` — a moment check can fire well
+  // after this screen first mounted (e.g. a later round's outcome), and a
+  // recruited player's role can genuinely change in between.
+  PlayerRole? _selfRole;
 
   // Created once and reused for the lifetime of this screen. Calling
   // `repo.watchXyz(...)` directly inside `build()` would hand a brand-new
@@ -257,15 +261,16 @@ class _GameScreenState extends State<GameScreen> {
     });
   }
 
-  /// Subscribed once, the first time the dashboard is actually showing
-  /// (never while the role-reveal ceremony is still up front — a moment
-  /// dialog popping up underneath it would be a mess). Runs an initial
-  /// check right away (catches up on anything that happened while this
-  /// player wasn't looking), then again on every subsequent game change —
-  /// which also covers the case where the moment belongs to whoever's
-  /// live in the app right now, e.g. the mafia member who just executed a
-  /// recruitment themselves.
-  void _startWatchingForMoments() {
+  /// Subscribed once, the first time this screen's dashboard is built.
+  /// Runs an initial check right away (catches up on anything that
+  /// happened while this player wasn't looking — including, for a brand
+  /// new join, the `joinedCase` moment that now carries the role reveal
+  /// that used to be its own separate ceremony screen), then again on
+  /// every subsequent game change — which also covers the case where the
+  /// moment belongs to whoever's live in the app right now, e.g. the
+  /// mafia member who just executed a recruitment themselves.
+  void _startWatchingForMoments(PlayerRole selfRole) {
+    _selfRole = selfRole;
     if (_momentsSubscription != null) return;
     _checkForMoments();
     _momentsSubscription = _gameStream.listen((_) => _checkForMoments());
@@ -283,7 +288,7 @@ class _GameScreenState extends State<GameScreen> {
       if (moments.isEmpty) return;
       await repo.acknowledgeAllMoments(gameId: widget.gameId, playerId: widget.playerId);
       if (!mounted) return;
-      await presentMoments(context, selectMomentsToShow(moments));
+      await presentMoments(context, selectMomentsToShow(moments), selfRole: _selfRole!);
     } finally {
       _checkingMoments = false;
     }
@@ -332,14 +337,7 @@ class _GameScreenState extends State<GameScreen> {
           return const _LeftGameScreen();
         }
 
-        if (_showRoleReveal) {
-          return _RoleRevealScreen(
-            role: self.role,
-            onContinue: () => setState(() => _showRoleReveal = false),
-          );
-        }
-
-        _startWatchingForMoments();
+        _startWatchingForMoments(self.role);
 
         return _Dashboard(
           gameId: widget.gameId,
@@ -353,65 +351,6 @@ class _GameScreenState extends State<GameScreen> {
           blockedPlayerIdsStream: _blockedPlayerIdsStream,
         );
       },
-    );
-  }
-}
-
-class _RoleRevealScreen extends StatelessWidget {
-  final PlayerRole role;
-  final VoidCallback onContinue;
-
-  const _RoleRevealScreen({required this.role, required this.onContinue});
-
-  @override
-  Widget build(BuildContext context) {
-    final reduceMotion = MediaQuery.of(context).disableAnimations;
-
-    Widget badge = RoleBadge(role: role, size: 72);
-    Widget headline = Text(
-      noirRoleHeadline(role),
-      style: AppTypography.displayLarge,
-      textAlign: TextAlign.center,
-    );
-
-    if (!reduceMotion) {
-      badge = badge
-          .animate(onComplete: (_) => HapticFeedback.mediumImpact())
-          .scale(
-            begin: const Offset(0.85, 0.85),
-            end: const Offset(1, 1),
-            duration: AppMotion.ceremonySeal,
-            curve: Curves.easeOutBack,
-          );
-      headline = headline
-          .animate(delay: 150.ms)
-          .fadeIn(duration: AppMotion.ceremonyHeadline)
-          .slideY(begin: 0.15, end: 0, duration: AppMotion.ceremonyHeadline);
-    }
-
-    return Scaffold(
-      backgroundColor: AppColors.ink,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xl),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              badge,
-              const SizedBox(height: AppSpacing.xl),
-              headline,
-              const SizedBox(height: AppSpacing.md),
-              Text(
-                noirRoleSubtitle(role),
-                style: AppTypography.body.copyWith(color: AppColors.textSecondary),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: AppSpacing.xxl),
-              ElevatedButton(onPressed: onContinue, child: const Text('Open the case file')),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

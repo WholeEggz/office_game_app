@@ -19,7 +19,7 @@ const {
 // default app isn't initialized yet.
 initializeApp();
 
-const { computeNextCutoffAt } = require("./lib/roundResolution");
+const { computeNextCutoffAt, newMomentWrite } = require("./lib/roundResolution");
 
 const db = getFirestore();
 
@@ -150,6 +150,12 @@ exports.createGame = onCall(async (request) => {
     if (isRestricted) {
       tx.set(gameRef.collection("passphrase").doc("secret"), { words: normalizedPassphrase });
     }
+    // The client's own first-entry ceremony (role reveal + welcome) reads
+    // entirely off this moment now — see moment_dialog.dart's joinedCase
+    // handling — so it has to exist the instant the creator actually
+    // joins, not just for players who join an existing case via addPlayer.
+    const moment = newMomentWrite(gameRef, creatorId, "joinedCase", 1);
+    tx.set(moment.ref, moment.data);
   });
 
   // Covers the edge case where minPlayers is already met the moment the
@@ -210,6 +216,10 @@ exports.addPlayer = onCall(async (request) => {
     }
 
     tx.set(playerRef, newPlayerDoc(name));
+    // See the matching comment in createGame — the client's role-reveal
+    // ceremony now lives entirely inside this moment's dialog.
+    const moment = newMomentWrite(gameRef, playerId, "joinedCase", gameSnap.data().currentRound);
+    tx.set(moment.ref, moment.data);
   });
 
   // Real players never see a manual "start the game" button — without

@@ -55,22 +55,21 @@ void main() {
         home: GameScreen(gameId: game.id, playerId: viewer.id),
       ),
     ));
-    await tester.pump();
-
-    // Dismiss the role-reveal ceremony that always plays on entry.
-    await tester.tap(find.text('Open the case file'));
-    await tester.pump();
-    await tester.pump(); // one more frame for the post-role-reveal moments fetch
+    await tester.pumpAndSettle();
 
     // "Welcome to the case" (joinedCase, recorded when they were first
-    // added) is first in the queue, ahead of the round-scoped moment.
+    // added — and now carrying the former role-reveal ceremony's content)
+    // is first in the queue, ahead of the round-scoped moment.
     expect(find.textContaining('Welcome to the case'), findsOneWidget);
     await tester.tap(find.text('Continue'));
-    await tester.pump();
+    // pumpAndSettle, not a single pump — a dialog's pop transition isn't
+    // instant, and the next dialog in the queue needs the first one fully
+    // gone before its own "Continue" is unambiguous to find.
+    await tester.pumpAndSettle();
 
     expect(find.textContaining('Round 1 has ended'), findsOneWidget);
     await tester.tap(find.text('Continue'));
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     expect(find.textContaining('Round 1 has ended'), findsNothing);
 
@@ -118,10 +117,7 @@ void main() {
         home: GameScreen(gameId: game.id, playerId: voter.id),
       ),
     ));
-    await tester.pump();
-    await tester.tap(find.text('Open the case file'));
-    await tester.pump();
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     // Only the joinedCase welcome dialog so far — nothing round-related
     // has happened yet.
@@ -129,7 +125,7 @@ void main() {
     expect(find.textContaining('has ended'), findsNothing);
     expect(find.textContaining('Good catch'), findsNothing);
     await tester.tap(find.text('Continue'));
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     // Everyone votes for `target`, cast directly through the repository —
     // this player's GameScreen is already open and just watching, not the
@@ -146,7 +142,7 @@ void main() {
 
     expect(find.textContaining('Good catch'), findsOneWidget);
     await tester.tap(find.text('Continue'));
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     // Close the case (unmask the remaining mafia member too) so no cutoff
     // timer is left pending at teardown.
@@ -198,13 +194,8 @@ void main() {
     await tester.tap(find.text('Join'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Join this case'));
-    await tester.pump();
-    await tester.pump();
+    await tester.pumpAndSettle();
 
-    // Dismiss the role-reveal ceremony, then the welcome dialog it queues.
-    await tester.tap(find.text('Open the case file'));
-    await tester.pump();
-    await tester.pump();
     expect(find.textContaining('Welcome to the case'), findsOneWidget);
     await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
@@ -215,12 +206,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Enter'), findsOneWidget);
     await tester.tap(find.text('Enter'));
-    await tester.pump();
-    await tester.pump();
+    await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Open the case file'));
-    await tester.pump();
-    await tester.pump();
     expect(find.textContaining('Welcome back'), findsOneWidget);
     expect(find.textContaining('Welcome to the case'), findsNothing);
     await tester.tap(find.text('Continue'));

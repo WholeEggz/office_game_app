@@ -113,12 +113,9 @@ void main() {
         .first;
     expect(game.players.map((p) => p.name), containsAll(['Creator', 'Alice']));
 
-    // Dismiss the role-reveal ceremony so the back button is actually on
-    // screen (it sits on the dashboard underneath).
-    await tester.tap(find.text('Open the case file'));
-    await tester.pumpAndSettle();
-    // Any moment dialog queued for joining — clear it the same way
-    // game_screen_moments_test.dart does.
+    // Dismiss the joinedCase welcome dialog so the back button is actually
+    // on screen (it sits on the dashboard underneath) — the same drain
+    // pattern as game_screen_moments_test.dart.
     while (tester.any(find.text('Continue'))) {
       await tester.tap(find.text('Continue').first);
       await tester.pumpAndSettle();
