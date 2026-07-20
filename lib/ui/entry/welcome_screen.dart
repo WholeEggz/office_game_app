@@ -2,12 +2,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:flutter_svg/flutter_svg.dart';
+import 'package:google_fonts/google_fonts.dart';
 
-import '../../design/colors.dart';
-import '../../design/graphics.dart';
 import '../../design/spacing.dart';
-import '../../design/typography.dart';
 import 'entry_screen.dart';
 import 'player_entry_screen.dart';
 
@@ -17,11 +14,13 @@ import 'player_entry_screen.dart';
 /// debug builds; a real build has no Tester option, so it skips straight
 /// to PlayerEntryScreen instead.
 ///
-/// Three interchangeable looks — two full-bleed poster variants (intro2,
-/// then intro1) followed by the original mark-and-headline design last —
-/// cycled by tapping anywhere on the page except the CTA itself, looping
-/// back to the first after the last. Purely cosmetic: every variant
-/// leads to the same [_enter].
+/// A single full-bleed poster (intro2) for now — the earlier tap-to-cycle
+/// through other looks is paused (see git history for the mark-and-
+/// headline design and the intro1 variant) in favor of this: a tap
+/// doesn't change the screen, it reveals the next line of a slow tease
+/// of secrets, each played with the same fade-in/whisper/fade-out
+/// treatment as the first line, which plays on its own shortly after
+/// load. Looping back to the first secret after the last, indefinitely.
 class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({super.key});
 
@@ -30,18 +29,33 @@ class WelcomeScreen extends StatefulWidget {
 }
 
 class _WelcomeScreenState extends State<WelcomeScreen> {
-  // Cycle order: intro2 first, then intro1, then the original
-  // mark-and-headline design last — reversed from first-added order.
-  static const _posterAssets = [
-    'assets/graphics/intro2.png',
-    'assets/graphics/intro1.png',
+  static const _posterAsset = 'assets/graphics/intro2.png';
+
+  /// Whispered one at a time — [0] plays itself, unprompted, shortly after
+  /// load; every tap after that reveals the next.
+  static const _secrets = [
+    'Something mysterious is happening in your office',
+    'Some of your friends work on a secret case',
+    'Some of them belong to the mafia',
+    "No one is quite who they seem to be",
+    'Trust is the first thing that goes missing',
+    'The only way to know for sure is to look closer',
   ];
 
-  int _variant = 0;
+  int _secretIndex = 0;
 
-  void _advance() {
+  /// True once the player has tapped at least once — the very first
+  /// secret plays itself after a deliberate breath of quiet; every one a
+  /// tap reveals should feel immediate instead, not wait through that
+  /// same pause again.
+  bool _hasTapped = false;
+
+  void _revealNextSecret() {
     HapticFeedback.selectionClick();
-    setState(() => _variant = (_variant + 1) % (_posterAssets.length + 1));
+    setState(() {
+      _hasTapped = true;
+      _secretIndex = (_secretIndex + 1) % _secrets.length;
+    });
   }
 
   void _enter(BuildContext context) {
@@ -56,91 +70,14 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   @override
   Widget build(BuildContext context) {
     final reduceMotion = MediaQuery.of(context).disableAnimations;
-    final content = _variant < _posterAssets.length
-        ? _buildPoster(context, _posterAssets[_variant], reduceMotion)
-        : _buildOriginal(context, reduceMotion);
-
     return Scaffold(
       body: GestureDetector(
         // The CTA button below is its own descendant gesture detector, so
         // it wins the tap over this one wherever it sits — this only ever
         // fires for a tap that lands outside it.
         behavior: HitTestBehavior.opaque,
-        onTap: _advance,
-        child: AnimatedSwitcher(
-          duration: reduceMotion ? Duration.zero : AppMotion.ceremonyHeadline,
-          child: KeyedSubtree(key: ValueKey(_variant), child: content),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildOriginal(BuildContext context, bool reduceMotion) {
-    Widget mark = SvgPicture.asset(AppGraphics.appMark, width: 116, height: 116);
-    Widget headline = Text(
-      'Something mysterious is\nhappening around your office…',
-      textAlign: TextAlign.center,
-      style: AppTypography.displayLarge,
-    );
-    Widget subhead = Text(
-      'A social deduction game for your team.',
-      textAlign: TextAlign.center,
-      style: AppTypography.body.copyWith(color: AppColors.textSecondary),
-    );
-    Widget cta = _cta();
-
-    if (!reduceMotion) {
-      // A single shimmer sweep once the seal has scaled in — not a
-      // repeating one: an unbounded animation never settles, which hangs
-      // pumpAndSettle() in any test that mounts this screen, and burns
-      // battery for as long as a real user happens to linger here.
-      mark = mark
-          .animate()
-          .scale(
-            begin: const Offset(0.85, 0.85),
-            end: const Offset(1, 1),
-            duration: AppMotion.ceremonySeal,
-            curve: Curves.easeOutBack,
-          )
-          .shimmer(
-            duration: const Duration(milliseconds: 900),
-            color: AppColors.brass.withValues(alpha: 0.55),
-          );
-      headline = headline
-          .animate(delay: 250.ms)
-          .fadeIn(duration: AppMotion.ceremonyHeadline)
-          .slideY(begin: 0.15, end: 0, duration: AppMotion.ceremonyHeadline);
-      subhead = subhead
-          .animate(delay: 450.ms)
-          .fadeIn(duration: AppMotion.ceremonyHeadline);
-      cta = cta.animate(delay: 700.ms).fadeIn(duration: AppMotion.ceremonyHeadline);
-    }
-
-    return DecoratedBox(
-      decoration: const BoxDecoration(
-        gradient: RadialGradient(
-          center: Alignment(0, -0.2),
-          radius: 1.1,
-          colors: [AppColors.surfaceRaised, AppColors.ink],
-        ),
-      ),
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
-          child: Column(
-            children: [
-              const Spacer(flex: 3),
-              mark,
-              const SizedBox(height: AppSpacing.xxl),
-              headline,
-              const SizedBox(height: AppSpacing.md),
-              subhead,
-              const Spacer(flex: 2),
-              cta,
-              const SizedBox(height: AppSpacing.xl),
-            ],
-          ),
-        ),
+        onTap: _revealNextSecret,
+        child: _buildPoster(context, reduceMotion),
       ),
     );
   }
@@ -154,13 +91,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   /// up off the very bottom edge, into clearer view above the CTA.
   static const _posterHeightFactor = 0.8;
 
-  /// A full-bleed poster with its own title and tagline already baked in
-  /// — so unlike [_buildOriginal], this doesn't repeat a headline over
-  /// it, just eases its own lower edge into the app's background color
-  /// with a light tint (not meant to hide anything, just soften the
-  /// seam) so the CTA below sits on a legible, on-brand surface instead
-  /// of directly over the busiest part of the photo.
-  Widget _buildPoster(BuildContext context, String asset, bool reduceMotion) {
+  Widget _buildPoster(BuildContext context, bool reduceMotion) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final totalHeight = constraints.maxHeight;
@@ -194,7 +125,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    Image.asset(asset, fit: BoxFit.cover),
+                    Image.asset(_posterAsset, fit: BoxFit.cover),
                     DecoratedBox(
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
@@ -209,6 +140,17 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                         ),
                       ),
                     ),
+                    // Never intercepts the reveal-next-secret tap
+                    // underneath, whether it's mid-fade or invisible.
+                    if (!reduceMotion)
+                      IgnorePointer(
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+                            child: _buildWhisper(),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -223,6 +165,46 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
           ],
         );
       },
+    );
+  }
+
+  /// A one-shot flourish — fades in over the poster, holds, then fades
+  /// back out — for whichever secret is current, keyed so a fresh tap
+  /// (or the very first automatic showing) always replays from scratch
+  /// rather than interrupting an existing fade in place. A slight fixed
+  /// tilt (not an animated rotation) plus a faint, near-whispered fill
+  /// give it a torn-poster-insert look rather than a clean, flat banner.
+  Widget _buildWhisper() {
+    return KeyedSubtree(
+      key: ValueKey(_secretIndex),
+      child: Transform.rotate(
+        angle: -0.06,
+        child: Text(
+          _secrets[_secretIndex],
+          textAlign: TextAlign.center,
+          style: GoogleFonts.anton(
+            fontSize: 34,
+            height: 1.3,
+            color: Colors.white.withValues(alpha: 0.32),
+            letterSpacing: 1,
+            shadows: [
+              Shadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 16),
+            ],
+          ),
+        ),
+      )
+          .animate()
+          // The initial wait is a per-effect delay on fadeIn, not a
+          // construct-level Animate(delay:) — that variant runs a plain
+          // timer before the animation controller itself even starts,
+          // which pumpAndSettle() doesn't track the way it does the
+          // controller-driven gap in .then(delay:) below, and left a
+          // dangling Timer past widget disposal in tests. Only the very
+          // first, unprompted showing gets that breath of quiet — a tap
+          // should feel answered right away, not delayed.
+          .fadeIn(delay: _hasTapped ? Duration.zero : 1200.ms, duration: 900.ms)
+          .then(delay: 2200.ms)
+          .fadeOut(duration: 900.ms),
     );
   }
 
