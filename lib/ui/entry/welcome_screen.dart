@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -8,19 +9,22 @@ import '../../design/graphics.dart';
 import '../../design/spacing.dart';
 import '../../design/typography.dart';
 import 'entry_screen.dart';
+import 'player_entry_screen.dart';
 
-/// The very first thing a real (non-debug) cold launch shows — a beat of
-/// atmosphere before EntryScreen's functional "how do you want to play"
-/// choice, so a fresh user lands somewhere with a pulse, not straight into
-/// a form. Debug builds skip straight to EntryScreen (see main.dart) so
-/// fast dev iteration doesn't replay this every hot restart.
+/// The signed-out-only first beat of a cold launch (see AppEntryGate,
+/// which decides whether this shows at all) — atmosphere before the
+/// functional flow starts. Leads to EntryScreen's Player/Tester choice in
+/// debug builds; a real build has no Tester option, so it skips straight
+/// to PlayerEntryScreen instead.
 class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key});
 
   void _enter(BuildContext context) {
     HapticFeedback.selectionClick();
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const EntryScreen()),
+      MaterialPageRoute(
+        builder: (_) => kDebugMode ? const EntryScreen() : const PlayerEntryScreen(),
+      ),
     );
   }
 
@@ -48,6 +52,10 @@ class WelcomeScreen extends StatelessWidget {
     );
 
     if (!reduceMotion) {
+      // A single shimmer sweep once the seal has scaled in — not a
+      // repeating one: an unbounded animation never settles, which hangs
+      // pumpAndSettle() in any test that mounts this screen, and burns
+      // battery for as long as a real user happens to linger here.
       mark = mark
           .animate()
           .scale(
@@ -56,10 +64,8 @@ class WelcomeScreen extends StatelessWidget {
             duration: AppMotion.ceremonySeal,
             curve: Curves.easeOutBack,
           )
-          .animate(onPlay: (c) => c.repeat(reverse: true))
           .shimmer(
-            delay: AppMotion.ceremonySeal,
-            duration: const Duration(milliseconds: 2200),
+            duration: const Duration(milliseconds: 900),
             color: AppColors.brass.withValues(alpha: 0.55),
           );
       headline = headline

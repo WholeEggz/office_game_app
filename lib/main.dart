@@ -14,8 +14,8 @@ import 'design/theme.dart';
 import 'domain/repositories/auth_service.dart';
 import 'domain/repositories/game_repository.dart';
 import 'firebase_options.dart';
+import 'ui/entry/app_entry_gate.dart';
 import 'ui/entry/backend_selection_screen.dart';
-import 'ui/entry/welcome_screen.dart';
 
 /// Firebase backend integration (implementation_plan.md, Phase 1b) is
 /// complete as of Milestone 6 — FirebaseGameRepository/FirebaseAuthService
@@ -101,14 +101,11 @@ class _OfficeGameAppState extends State<OfficeGameApp> {
         title: 'Office Game',
         debugShowCheckedModeBanner: false,
         theme: buildOfficeGameTheme(),
-        // The welcome screen is a one-time cold-launch beat, not something
-        // worth replaying on every debug hot restart — kDebugMode skips
-        // straight to the functional entry point, same convention as
-        // BackendSelectionScreen and the Tester card above.
-        // Shown in every build, debug included — EntryScreen just past it
-        // already branches on kDebugMode for the Tester card, so there's
-        // no separate bypass needed here.
-        home: const WelcomeScreen(),
+        // AppEntryGate decides what a cold launch actually opens on —
+        // WelcomeScreen only for a signed-out device, EntryScreen's
+        // Player/Tester choice only in debug builds, otherwise straight
+        // to PlayerEntryScreen. See its doc comment for the full matrix.
+        home: const AppEntryGate(),
       ),
     );
   }

@@ -8,6 +8,12 @@ void main() {
     expect(find.text('Use local'), findsOneWidget);
     await tester.tap(find.text('Use local'));
     await tester.pumpAndSettle();
+    // AppEntryGate's resumeSession() check resolves async; a fresh
+    // LocalAuthService has nothing to resume, so this lands on
+    // WelcomeScreen first — tap through it to reach the actual entry
+    // screen underneath.
+    await tester.tap(find.text('Begin the investigation'));
+    await tester.pumpAndSettle();
   }
 
   testWidgets('opens on the backend selector, then the player-vs-tester entry screen',
