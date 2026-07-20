@@ -233,6 +233,7 @@ class _CaseCreationScreenState extends State<CaseCreationScreen> {
                 children: [
                   TextField(
                     controller: _nameController,
+                    textCapitalization: TextCapitalization.words,
                     decoration: const InputDecoration(labelText: 'Case name'),
                   ),
                   const SizedBox(height: AppSpacing.lg),
@@ -263,6 +264,7 @@ class _CaseCreationScreenState extends State<CaseCreationScreen> {
                   TextField(
                     key: const ValueKey('case_rules_field'),
                     controller: _rulesController,
+                    textCapitalization: TextCapitalization.sentences,
                     maxLines: 4,
                     decoration: const InputDecoration(
                       labelText: 'Case rules',

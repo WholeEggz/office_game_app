@@ -204,6 +204,7 @@ class _RoleSwitcherScreenState extends State<RoleSwitcherScreen> {
             children: [
               TextField(
                 controller: _locationController,
+                textCapitalization: TextCapitalization.words,
                 decoration: const InputDecoration(labelText: 'Location tag'),
               ),
               const SizedBox(height: AppSpacing.md),
@@ -215,6 +216,7 @@ class _RoleSwitcherScreenState extends State<RoleSwitcherScreen> {
               const SizedBox(height: AppSpacing.md),
               TextField(
                 controller: _creatorNameController,
+                textCapitalization: TextCapitalization.words,
                 decoration: const InputDecoration(labelText: 'Your name'),
               ),
               const SizedBox(height: AppSpacing.lg),
@@ -286,6 +288,7 @@ class _RoleSwitcherScreenState extends State<RoleSwitcherScreen> {
                 Expanded(
                   child: TextField(
                     controller: _joinNameController,
+                    textCapitalization: TextCapitalization.words,
                     decoration: const InputDecoration(labelText: 'New player name'),
                   ),
                 ),

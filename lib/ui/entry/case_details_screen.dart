@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../design/spacing.dart';
 import '../../design/typography.dart';
 import '../../domain/models/game.dart';
+import '../common/async_tap_guard.dart';
 import '../common/dossier_card.dart';
 
 /// Shown before a prospective player joins a case — the creator's own
@@ -15,7 +16,7 @@ import '../common/dossier_card.dart';
 /// mafia member of this same game. No new repository call needed here.
 class CaseDetailsScreen extends StatelessWidget {
   final Game game;
-  final VoidCallback onJoin;
+  final Future<void> Function() onJoin;
 
   const CaseDetailsScreen({super.key, required this.game, required this.onJoin});
 
@@ -68,10 +69,13 @@ class CaseDetailsScreen extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.xl),
             if (canJoin)
-              ElevatedButton(
-                key: const ValueKey('join_this_case_button'),
-                onPressed: onJoin,
-                child: const Text('Join this case'),
+              AsyncTapGuard(
+                onTap: onJoin,
+                builder: (context, onPressed, busy) => ElevatedButton(
+                  key: const ValueKey('join_this_case_button'),
+                  onPressed: onPressed,
+                  child: busy ? asyncTapGuardSpinner : const Text('Join this case'),
+                ),
               )
             else
               Text('This case is closed.', style: AppTypography.bodySmall),

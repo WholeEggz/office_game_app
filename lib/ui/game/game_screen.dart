@@ -18,6 +18,7 @@ import '../../domain/models/observation.dart';
 import '../../domain/models/player.dart';
 import '../../domain/models/vote.dart';
 import '../../domain/repositories/game_repository.dart';
+import '../common/async_tap_guard.dart';
 import '../common/dossier_card.dart';
 import '../common/noir_copy.dart';
 import '../common/role_badge.dart';
@@ -157,6 +158,7 @@ class _ReportDialogState extends State<_ReportDialog> {
       title: Text('Report ${widget.targetName}'),
       content: TextField(
         controller: _reasonController,
+        textCapitalization: TextCapitalization.sentences,
         autofocus: true,
         maxLines: 3,
         decoration: const InputDecoration(hintText: 'What happened?'),
@@ -1346,8 +1348,8 @@ class _PlayerRosterSection extends StatelessWidget {
                                     VoteWeightPill(weight: player.voteWeight),
                                   const SizedBox(width: AppSpacing.sm),
                                   if (player.id != self.id && !player.hasLeft)
-                                    TextButton(
-                                      onPressed: () => _runGuarded(
+                                    AsyncTapGuard(
+                                      onTap: () => _runGuarded(
                                         context,
                                         () => repo.castVote(
                                           gameId: gameId,
@@ -1355,7 +1357,12 @@ class _PlayerRosterSection extends StatelessWidget {
                                           targetPlayerId: player.id,
                                         ),
                                       ),
-                                      child: Text(myVoteTargetId == player.id ? 'Voted' : 'Vote'),
+                                      builder: (context, onPressed, busy) => TextButton(
+                                        onPressed: onPressed,
+                                        child: busy
+                                            ? asyncTapGuardSpinner
+                                            : Text(myVoteTargetId == player.id ? 'Voted' : 'Vote'),
+                                      ),
                                     ),
                                   // Available regardless of hasLeft — you
                                   // might still want to report or block
@@ -1680,6 +1687,7 @@ class _MafiaSectionState extends State<_MafiaSection> {
               Expanded(
                 child: TextField(
                   controller: _messageController,
+                  textCapitalization: TextCapitalization.sentences,
                   decoration: const InputDecoration(hintText: 'Message the wire'),
                 ),
               ),
@@ -1990,6 +1998,7 @@ class _ProposeEliminationDialogState extends State<_ProposeEliminationDialog> {
           const SizedBox(height: AppSpacing.md),
           TextField(
             controller: _methodController,
+            textCapitalization: TextCapitalization.sentences,
             decoration: const InputDecoration(hintText: 'e.g. a note left on their monitor'),
             // The Propose button's enabled state reads this controller, so
             // typing has to trigger a rebuild too — not just the dropdown.
@@ -2059,6 +2068,7 @@ class _ProposeRecruitmentDialogState extends State<_ProposeRecruitmentDialog> {
           const SizedBox(height: AppSpacing.md),
           TextField(
             controller: _signController,
+            textCapitalization: TextCapitalization.sentences,
             decoration: const InputDecoration(hintText: 'e.g. a specific pen left on their desk'),
             // The Propose button's enabled state reads this controller, so
             // typing has to trigger a rebuild too — not just the dropdown.
@@ -2221,6 +2231,7 @@ class _ObservationSectionState extends State<_ObservationSection> {
               Expanded(
                 child: TextField(
                   controller: _textController,
+                  textCapitalization: TextCapitalization.sentences,
                   decoration: const InputDecoration(hintText: 'What did you notice?'),
                 ),
               ),

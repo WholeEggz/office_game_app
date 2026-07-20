@@ -227,4 +227,67 @@ void main() {
     await tester.pump();
     await _drainDialogs(tester);
   });
+
+  testWidgets(
+      'two rapid taps on "Enter" — landing before the button had a chance to '
+      'disable itself, as a real slow-network double-tap would — only push one '
+      'case dashboard, not two', (tester) async {
+    final repo = LocalGameRepository();
+    final auth = LocalAuthService();
+    final game = await repo.createGame(
+      locationTag: 'Test Office',
+      minPlayers: 4,
+      creatorId: 'creator',
+      creatorName: 'Creator',
+      mafiaCount: 1,
+    );
+
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        Provider<GameRepository>.value(value: repo),
+        Provider<AuthService>.value(value: auth),
+      ],
+      child: const MaterialApp(home: PlayerEntryScreen()),
+    ));
+    await tester.pump();
+
+    await tester.enterText(find.byType(TextField), 'Alice');
+    await tester.tap(find.text('Continue'));
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.text('Join'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Join this case'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    // Both taps land before either has triggered a rebuild — exactly what
+    // two fast real-world taps look like against a button whose disabled
+    // state only takes effect on the next frame.
+    await tester.tap(find.text('Enter'));
+    await tester.tap(find.text('Enter'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(GameScreen), findsOneWidget);
+    expect(find.textContaining('Welcome back'), findsOneWidget);
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+
+    await repo.addPlayer(gameId: game.id, playerId: 'p3', name: 'Player 3');
+    await repo.addPlayer(gameId: game.id, playerId: 'p4', name: 'Player 4');
+    final started = await repo.watchGame(game.id).first;
+    final mafia = started.mafia.single;
+    for (final voter in started.players.where((p) => p.id != mafia.id)) {
+      await repo.castVote(gameId: game.id, voterId: voter.id, targetPlayerId: mafia.id);
+    }
+    await repo.resolveVotesForDay(game.id);
+    await tester.pump();
+    await tester.pump();
+    await _drainDialogs(tester);
+  });
 }

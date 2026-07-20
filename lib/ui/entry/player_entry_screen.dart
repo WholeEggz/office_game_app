@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -10,6 +12,7 @@ import '../../design/typography.dart';
 import '../../domain/models/game.dart';
 import '../../domain/repositories/auth_service.dart';
 import '../../domain/repositories/game_repository.dart';
+import '../common/async_tap_guard.dart';
 import '../common/dossier_card.dart';
 import '../game/game_screen.dart';
 import '../help/help_screen.dart';
@@ -332,6 +335,7 @@ class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
             children: [
               TextField(
                 controller: _nameController,
+                textCapitalization: TextCapitalization.words,
                 decoration: const InputDecoration(labelText: 'Your name'),
                 onSubmitted: (_) => _register(),
               ),
@@ -382,11 +386,20 @@ class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
                   // restricted case is gated behind its passphrase first;
                   // any other not-yet-joined case opens its details screen
                   // directly, same as before.
+                  // The restricted branch deliberately doesn't await
+                  // _unlockRestrictedCase itself — it opens a modal
+                  // passphrase dialog almost immediately and then waits on
+                  // the user to type into it, which could be a long wait
+                  // with nothing wrong; tying this button's busy/disabled
+                  // state to that whole span would leave it spinning the
+                  // entire time (and, in tests, hang pumpAndSettle) for no
+                  // real reason — the dialog's own barrier already blocks
+                  // re-tapping this tile underneath it once it's up.
                   onTap: game.players.any((p) => p.id == user.id)
                       ? () => _joinAndEnter(game)
                       : (game.isRestricted
-                          ? () => _unlockRestrictedCase(game)
-                          : () => _openDetails(game)),
+                          ? () async => unawaited(_unlockRestrictedCase(game))
+                          : () async => _openDetails(game)),
                 ),
                 const SizedBox(height: AppSpacing.sm),
               ],
@@ -407,7 +420,7 @@ class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
 class _GameListTile extends StatelessWidget {
   final Game game;
   final String selfId;
-  final VoidCallback onTap;
+  final Future<void> Function() onTap;
 
   const _GameListTile({required this.game, required this.selfId, required this.onTap});
 
@@ -458,11 +471,16 @@ class _GameListTile extends StatelessWidget {
               ],
             ),
           ),
-          OutlinedButton(
-            onPressed: canTap ? onTap : null,
-            child: Text(alreadyJoined
-                ? 'Enter'
-                : (ended ? 'Closed' : (game.isRestricted ? 'Unlock' : 'Join'))),
+          AsyncTapGuard(
+            onTap: onTap,
+            builder: (context, onPressed, busy) => OutlinedButton(
+              onPressed: canTap ? onPressed : null,
+              child: busy
+                  ? asyncTapGuardSpinner
+                  : Text(alreadyJoined
+                      ? 'Enter'
+                      : (ended ? 'Closed' : (game.isRestricted ? 'Unlock' : 'Join'))),
+            ),
           ),
         ],
       ),
