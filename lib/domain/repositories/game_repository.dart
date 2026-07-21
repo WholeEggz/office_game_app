@@ -27,6 +27,12 @@ abstract class GameRepository {
   /// creator, since they're the one who has to relay them out of band.
   /// Stored case/whitespace-insensitively and never returned by anything
   /// a prospective player can read.
+  /// [creatorCountry]/[creatorCity]/[creatorCompanyOrOffice] denormalize
+  /// the creator's own saved location (see [Game.creatorCountry]) so
+  /// "Find your case" can sort by it without a per-row profile lookup —
+  /// optional and blank by default, same treatment as [rulesDescription]:
+  /// a caller that doesn't care about this feature (most tests) can
+  /// simply omit them.
   Future<Game> createGame({
     required String locationTag,
     required int minPlayers,
@@ -39,6 +45,9 @@ abstract class GameRepository {
     String rulesDescription = '',
     bool isRestricted = false,
     List<String>? passphraseWords,
+    String creatorCountry = '',
+    String creatorCity = '',
+    String creatorCompanyOrOffice = '',
   });
 
   /// Adds a new player to the game, always as a villager at the standard

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -13,10 +14,12 @@ import '../../domain/models/game.dart';
 import '../../domain/repositories/auth_service.dart';
 import '../../domain/repositories/game_repository.dart';
 import '../common/async_tap_guard.dart';
+import '../common/autocomplete_field.dart';
 import '../common/dossier_card.dart';
 import '../game/game_screen.dart';
 import '../help/help_screen.dart';
 import '../stats/track_record_screen.dart';
+import 'app_entry_gate.dart';
 import 'case_creation_screen.dart';
 import 'case_details_screen.dart';
 
@@ -122,6 +125,31 @@ String _formatAddedDate(DateTime createdAt) {
 
 /// Sort options for "Find your case" — newest-first by default so a case
 /// you just created or heard about is easy to spot without hunting.
+String _normalizeLocation(String value) => value.trim().toLowerCase();
+
+/// The strongest match between [game]'s creator location and the
+/// [viewer]'s own saved profile — 0 (company), 1 (city), 2 (country), or
+/// 3 (no match, including when [viewer] itself is null). Blank fields
+/// never count as a match on either side, so two cases that both simply
+/// never recorded a location don't spuriously "match" each other.
+int _locationTier(Game game, LocationProfile? viewer) {
+  if (viewer == null) return 3;
+  final company = _normalizeLocation(viewer.companyOrOffice);
+  final city = _normalizeLocation(viewer.city);
+  final country = _normalizeLocation(viewer.country);
+  if (company.isNotEmpty && _normalizeLocation(game.creatorCompanyOrOffice) == company) return 0;
+  if (city.isNotEmpty && _normalizeLocation(game.creatorCity) == city) return 1;
+  if (country.isNotEmpty && _normalizeLocation(game.creatorCountry) == country) return 2;
+  return 3;
+}
+
+String? _locationTierBadge(int tier) => switch (tier) {
+      0 => 'Your company',
+      1 => 'Your city',
+      2 => 'Your country',
+      _ => null,
+    };
+
 enum _SortOption {
   newest('Newest first'),
   oldest('Oldest first'),
@@ -150,7 +178,16 @@ class PlayerEntryScreen extends StatefulWidget {
 
 class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
   final _nameController = TextEditingController();
+  final _countryController = TextEditingController();
+  final _cityController = TextEditingController();
+  final _companyController = TextEditingController();
   AppUser? _user;
+  // The viewer's own saved location — used purely to float cases at a
+  // matching company/city/country to the top of "Find your case" (see
+  // _locationTier below); null before it's resolved, or for a debug
+  // identity with nothing saved, in which case every case just sorts as
+  // "no match" (unchanged behavior).
+  LocationProfile? _viewerProfile;
   // True only until the initial resumeSession() check resolves — brief in
   // practice (an already-cached auth state plus one Firestore read at
   // worst), but real: without this, a returning signed-in user would
@@ -173,12 +210,36 @@ class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
   /// Resolves to the registration form when there's nothing to resume
   /// (first launch, or a signed-out/never-registered device).
   Future<void> _resumeSession() async {
-    final resumed = await context.read<AuthService>().resumeSession();
+    final auth = context.read<AuthService>();
+    final resumed = await auth.resumeSession();
+    final profile = resumed == null ? null : await auth.currentLocationProfile();
+    // Nothing to resume means the registration form is about to show —
+    // its location fields query Firestore collections gated on
+    // isSignedIn() (see ensureSignedIn's doc comment) as soon as the
+    // player starts typing, well before "Continue" would otherwise
+    // establish any session at all.
+    if (resumed == null) await auth.ensureSignedIn();
     if (!mounted) return;
     setState(() {
       _user = resumed;
+      _viewerProfile = profile;
       _resumingSession = false;
     });
+  }
+
+  /// Debug-only: signs out and resets straight back to the very first
+  /// screen a cold launch shows (WelcomeScreen, via AppEntryGate — see its
+  /// own doc comment), clearing the whole navigation stack so there's no
+  /// stale signed-in screen left to "back" into. Exists purely so testing
+  /// the registration/welcome flow repeatedly doesn't require reinstalling
+  /// the app or clearing its storage by hand.
+  Future<void> _debugSignOut() async {
+    await context.read<AuthService>().signOut();
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const AppEntryGate()),
+      (route) => false,
+    );
   }
 
   /// At least one status stays selected — an empty filter would just read
@@ -196,17 +257,33 @@ class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
   @override
   void dispose() {
     _nameController.dispose();
+    _countryController.dispose();
+    _cityController.dispose();
+    _companyController.dispose();
     super.dispose();
   }
 
   Future<void> _register() async {
     final name = _nameController.text.trim();
-    if (name.isEmpty) return;
+    final country = _countryController.text.trim();
+    final city = _cityController.text.trim();
+    final company = _companyController.text.trim();
+    // All 4 fields required — location is what makes a later "find your
+    // case" pass possible, so a partial profile isn't useful to collect.
+    if (name.isEmpty || country.isEmpty || city.isEmpty || company.isEmpty) return;
     final auth = context.read<AuthService>();
     try {
-      final user = await auth.signInWithDisplayName(name);
+      final user = await auth.signInWithDisplayName(
+        name,
+        country: country,
+        city: city,
+        companyOrOffice: company,
+      );
       if (!mounted) return;
-      setState(() => _user = user);
+      setState(() {
+        _user = user;
+        _viewerProfile = (country: country, city: city, companyOrOffice: company);
+      });
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not sign in: $e')));
@@ -308,6 +385,12 @@ class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
               MaterialPageRoute(builder: (_) => const HelpScreen()),
             ),
           ),
+          if (kDebugMode && _user != null)
+            IconButton(
+              icon: Icon(PhosphorIconsLight.signOut, color: AppColors.textSecondary),
+              tooltip: 'Sign out (debug)',
+              onPressed: _debugSignOut,
+            ),
         ],
       ),
       body: SafeArea(
@@ -319,13 +402,15 @@ class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
   }
 
   Widget _buildRegisterForm() {
+    final auth = context.read<AuthService>();
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.lg),
       children: [
         Text('Who are you?', style: AppTypography.displayMedium),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          'Your name identifies you across every case on this device.',
+          'Your name and location identify you across every case on this '
+          'device, and help others find their coworkers\' cases.',
           style: AppTypography.bodySmall,
         ),
         const SizedBox(height: AppSpacing.xl),
@@ -338,6 +423,24 @@ class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
                 textCapitalization: TextCapitalization.words,
                 decoration: const InputDecoration(labelText: 'Your name'),
                 onSubmitted: (_) => _register(),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              AutocompleteField(
+                controller: _countryController,
+                label: 'Country',
+                suggest: auth.suggestCountries,
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              AutocompleteField(
+                controller: _cityController,
+                label: 'City',
+                suggest: auth.suggestCities,
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              AutocompleteField(
+                controller: _companyController,
+                label: 'Company or office name',
+                suggest: auth.suggestCompanies,
               ),
               const SizedBox(height: AppSpacing.lg),
               ElevatedButton(onPressed: _register, child: const Text('Continue')),
@@ -354,8 +457,16 @@ class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
       stream: repo.watchGames(viewerId: user.id),
       builder: (context, snapshot) {
         final games = snapshot.data ?? const [];
+        // Cases at the viewer's own company/city/country float to the top
+        // (in that order of strength) — see _locationTier — falling back
+        // to the chosen sort option within each tier, same as before.
         final visible = games.where((g) => _statusFilter.contains(g.status)).toList()
-          ..sort(_sort.compare);
+          ..sort((a, b) {
+            final tierCompare = _locationTier(a, _viewerProfile).compareTo(
+              _locationTier(b, _viewerProfile),
+            );
+            return tierCompare != 0 ? tierCompare : _sort.compare(a, b);
+          });
         return ListView(
           padding: const EdgeInsets.all(AppSpacing.lg),
           children: [
@@ -381,6 +492,7 @@ class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
                 _GameListTile(
                   game: game,
                   selfId: user.id,
+                  locationBadge: _locationTierBadge(_locationTier(game, _viewerProfile)),
                   // Already-joined cases still go straight back in
                   // (unchanged — TESTING.md §0.9); a not-yet-joined
                   // restricted case is gated behind its passphrase first;
@@ -420,9 +532,15 @@ class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
 class _GameListTile extends StatelessWidget {
   final Game game;
   final String selfId;
+  final String? locationBadge;
   final Future<void> Function() onTap;
 
-  const _GameListTile({required this.game, required this.selfId, required this.onTap});
+  const _GameListTile({
+    required this.game,
+    required this.selfId,
+    required this.locationBadge,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -454,6 +572,13 @@ class _GameListTile extends StatelessWidget {
                     Expanded(child: Text(game.locationTag, style: AppTypography.heading)),
                   ],
                 ),
+                if (locationBadge != null) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    locationBadge!,
+                    style: AppTypography.dataSmall.copyWith(color: AppColors.brass),
+                  ),
+                ],
                 const SizedBox(height: AppSpacing.xs),
                 Text(
                   game.isRestricted

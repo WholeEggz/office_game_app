@@ -134,11 +134,18 @@ class _CaseCreationScreenState extends State<CaseCreationScreen> {
 
   Future<void> _create() async {
     final repo = context.read<GameRepository>();
+    final auth = context.read<AuthService>();
     final roster = _expectedRoster();
     // Generated here (not by the repository) since the creator is the one
     // who has to actually relay these to whoever they want to invite — see
     // generatePassphraseWords' doc comment.
     final passphraseWords = _isRestricted ? generatePassphraseWords() : null;
+    // Denormalized onto the game so "Find your case" can sort by it later
+    // without a per-row profile lookup — null for a debug-only identity
+    // that never saved one (registerNewPlayer), which is a legitimate
+    // "no match" rather than something to block case creation over.
+    final profile = await auth.currentLocationProfile();
+    if (!mounted) return;
     try {
       final game = await repo.createGame(
         locationTag:
@@ -153,6 +160,9 @@ class _CaseCreationScreenState extends State<CaseCreationScreen> {
         rulesDescription: _rulesController.text.trim(),
         isRestricted: _isRestricted,
         passphraseWords: passphraseWords,
+        creatorCountry: profile?.country ?? '',
+        creatorCity: profile?.city ?? '',
+        creatorCompanyOrOffice: profile?.companyOrOffice ?? '',
       );
       if (!mounted) return;
       if (passphraseWords != null) {

@@ -20,7 +20,11 @@ Future<void> _signIn(WidgetTester tester, LocalGameRepository repo) async {
   // shows in the meantime means the registration form isn't in the tree
   // yet on the very first frame).
   await tester.pump();
-  await tester.enterText(find.byType(TextField), 'Alice');
+  final fields = find.byType(TextField);
+  await tester.enterText(fields.at(0), 'Alice');
+  await tester.enterText(fields.at(1), 'Poland');
+  await tester.enterText(fields.at(2), 'Warsaw');
+  await tester.enterText(fields.at(3), 'Acme Corp');
   await tester.tap(find.text('Continue'));
   await tester.pump();
   await tester.pump();

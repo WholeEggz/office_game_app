@@ -66,7 +66,12 @@ class FirebaseAuthService implements AuthService {
       ];
 
   @override
-  Future<AppUser> signInWithDisplayName(String displayName) async {
+  Future<AppUser> signInWithDisplayName(
+    String displayName, {
+    required String country,
+    required String city,
+    required String companyOrOffice,
+  }) async {
     // Deliberately not user.updateDisplayName()/reload(): that round-trip
     // hits a firebase_auth plugin bug (native updateProfile throws a
     // generic internal-error against the Auth emulator, at least for
@@ -79,8 +84,12 @@ class FirebaseAuthService implements AuthService {
     // returned the *existing* anonymous session's uid with a new label
     // slapped on the return value, so a second name typed in the same run
     // showed up everywhere (game lists, in-game rosters) still tagged
-    // with the first name's already-joined games and player docs.
-    if (user != null && _currentDisplayName != displayName) {
+    // with the first name's already-joined games and player docs. Only
+    // fires when a *real* prior name is known and differs — a session
+    // ensureSignedIn() pre-warmed (no name attached yet, purely so the
+    // registration form's own location fields could query Firestore
+    // while being typed into) is reused here rather than discarded.
+    if (user != null && _currentDisplayName != null && _currentDisplayName != displayName) {
       await _auth.signOut();
       user = null;
     }
@@ -93,7 +102,46 @@ class FirebaseAuthService implements AuthService {
       {'displayName': displayName},
       SetOptions(merge: true),
     );
+    // A separate Cloud Function (not a direct client write, unlike
+    // displayName above) — it also upserts the shared, cross-user
+    // locations_countries/locations_cities/locations_companies lookup
+    // docs that suggestCountries/suggestCities/suggestCompanies read
+    // from, which firestore.rules can't let an arbitrary client do
+    // directly (see that function's doc comment).
+    await _functions.httpsCallable('saveLocationProfile').call<Map<String, dynamic>>({
+      'country': country,
+      'city': city,
+      'companyOrOffice': companyOrOffice,
+    });
     return (id: user.uid, displayName: displayName);
+  }
+
+  Future<List<String>> _suggest(String collection, String prefix) async {
+    final normalized = prefix.trim().toLowerCase();
+    if (normalized.isEmpty) return const [];
+    final snap = await _db
+        .collection(collection)
+        .orderBy(FieldPath.documentId)
+        .startAt([normalized])
+        .endAt(['$normalized'])
+        .limit(8)
+        .get();
+    return snap.docs.map((d) => d.data()['display'] as String? ?? d.id).toList();
+  }
+
+  @override
+  Future<List<String>> suggestCountries(String prefix) => _suggest('locations_countries', prefix);
+
+  @override
+  Future<List<String>> suggestCities(String prefix) => _suggest('locations_cities', prefix);
+
+  @override
+  Future<List<String>> suggestCompanies(String prefix) => _suggest('locations_companies', prefix);
+
+  @override
+  Future<void> ensureSignedIn() async {
+    if (_auth.currentUser != null) return;
+    await _auth.signInAnonymously();
   }
 
   @override
@@ -115,6 +163,19 @@ class FirebaseAuthService implements AuthService {
     if (displayName == null || displayName.isEmpty) return null;
     _currentDisplayName = displayName;
     return (id: user.uid, displayName: displayName);
+  }
+
+  @override
+  Future<LocationProfile?> currentLocationProfile() async {
+    final user = _auth.currentUser;
+    if (user == null) return null;
+    final doc = await _db.collection('users').doc(user.uid).get();
+    final data = doc.data();
+    final country = data?['country'] as String?;
+    final city = data?['city'] as String?;
+    final companyOrOffice = data?['companyOrOffice'] as String?;
+    if (country == null || city == null || companyOrOffice == null) return null;
+    return (country: country, city: city, companyOrOffice: companyOrOffice);
   }
 
   @override

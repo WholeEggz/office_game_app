@@ -107,6 +107,16 @@ class Game {
   /// creation). Never changes after creation.
   final String creatorId;
 
+  /// The creator's own saved location at the moment they opened this
+  /// case (denormalized from their profile, not looked up live) — lets
+  /// "Find your case" float cases at the viewer's own company/city/
+  /// country to the top without a per-row profile lookup. Blank for any
+  /// case created before this existed, or by a debug identity with no
+  /// saved profile — that's a legitimate "no match," not an error state.
+  final String creatorCountry;
+  final String creatorCity;
+  final String creatorCompanyOrOffice;
+
   const Game({
     required this.id,
     required this.locationTag,
@@ -129,6 +139,9 @@ class Game {
     required this.createdAt,
     this.isRestricted = false,
     required this.creatorId,
+    this.creatorCountry = '',
+    this.creatorCity = '',
+    this.creatorCompanyOrOffice = '',
   });
 
   Player? playerById(String playerId) {
@@ -215,6 +228,9 @@ class Game {
       createdAt: createdAt,
       isRestricted: isRestricted,
       creatorId: creatorId,
+      creatorCountry: creatorCountry,
+      creatorCity: creatorCity,
+      creatorCompanyOrOffice: creatorCompanyOrOffice,
     );
   }
 }

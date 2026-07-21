@@ -12,6 +12,7 @@ const {
   shuffle,
   normalizeWords,
   sameWords,
+  normalizeWord,
 } = require("./lib/shared");
 
 // Must run before requiring ./lib/roundResolution — that module calls
@@ -91,6 +92,14 @@ exports.createGame = onCall(async (request) => {
     : 17 * 3600;
   const rulesDescription = typeof data.rulesDescription === "string" ? data.rulesDescription : "";
   const isRestricted = data.isRestricted === true;
+  // Denormalized from the creator's own saved profile (see
+  // saveLocationProfile) so "Find your case" can sort by it without a
+  // per-row lookup — optional, defaults to "" (a legitimate no-match,
+  // not an error) for any caller that doesn't send them.
+  const creatorCountry = typeof data.creatorCountry === "string" ? data.creatorCountry : "";
+  const creatorCity = typeof data.creatorCity === "string" ? data.creatorCity : "";
+  const creatorCompanyOrOffice =
+    typeof data.creatorCompanyOrOffice === "string" ? data.creatorCompanyOrOffice : "";
   // A case name can be reused once the earlier case with that name has
   // ended, but two simultaneously open cases sharing a name would be
   // ambiguous in "Find your case" — mirrors LocalGameRepository.createGame's
@@ -146,6 +155,9 @@ exports.createGame = onCall(async (request) => {
       createdAt: FieldValue.serverTimestamp(),
       isRestricted,
       creatorId,
+      creatorCountry,
+      creatorCity,
+      creatorCompanyOrOffice,
     });
     tx.set(playerRef, newPlayerDoc(creatorName));
     if (isRestricted) {
@@ -253,6 +265,54 @@ exports.verifyCasePassphrase = onCall(async (request) => {
   const passphraseSnap = await db.collection("games").doc(gameId).collection("passphrase").doc("secret").get();
   const actualWords = passphraseSnap.data()?.words || [];
   return { matches: sameWords(providedWords, actualWords) };
+});
+
+// Registration's country/city/company-or-office fields (see
+// PlayerEntryScreen's registration form) — a Cloud Function rather than
+// the direct client write `users/{uid}`'s own displayName field already
+// uses, because this also upserts the shared, cross-user
+// locations_countries/locations_cities/locations_companies lookup docs
+// that autocomplete reads from (suggestCountries/suggestCities/
+// suggestCompanies), and letting arbitrary clients increment a shared
+// counter directly isn't something firestore.rules can express safely.
+exports.saveLocationProfile = onCall(async (request) => {
+  const auth = requireAuth(request);
+  const data = request.data || {};
+  const country = requireString(data.country, "country");
+  const city = requireString(data.city, "city");
+  const companyOrOffice = requireString(data.companyOrOffice, "companyOrOffice");
+
+  const userRef = db.collection("users").doc(auth.uid);
+  const countryRef = db.collection("locations_countries").doc(normalizeWord(country));
+  const cityRef = db.collection("locations_cities").doc(normalizeWord(city));
+  const companyRef = db.collection("locations_companies").doc(normalizeWord(companyOrOffice));
+
+  await db.runTransaction(async (tx) => {
+    // All reads before any writes — Firestore transaction requirement.
+    const [countrySnap, citySnap, companySnap] = await Promise.all([
+      tx.get(countryRef),
+      tx.get(cityRef),
+      tx.get(companyRef),
+    ]);
+    tx.set(userRef, { country, city, companyOrOffice }, { merge: true });
+    tx.set(
+      countryRef,
+      countrySnap.exists ? { count: FieldValue.increment(1) } : { display: country, count: 1 },
+      { merge: true }
+    );
+    tx.set(
+      cityRef,
+      citySnap.exists ? { count: FieldValue.increment(1) } : { display: city, count: 1 },
+      { merge: true }
+    );
+    tx.set(
+      companyRef,
+      companySnap.exists ? { count: FieldValue.increment(1) } : { display: companyOrOffice, count: 1 },
+      { merge: true }
+    );
+  });
+
+  return { ok: true };
 });
 
 // Debug role switcher only — createGame/addPlayer already auto-start via

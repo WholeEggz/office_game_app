@@ -49,6 +49,14 @@ function sameWords(a, b) {
   return [...setA].every((w) => setB.has(w));
 }
 
+// Single-value sibling of normalizeWords — used as the doc id for the
+// locations_countries/locations_cities/locations_companies lookup
+// collections, so "Acme Corp"/"ACME"/"acme corp." all converge on the
+// same doc instead of fragmenting into near-duplicates.
+function normalizeWord(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
 module.exports = {
   STARTING_VOTE_WEIGHT,
   requireString,
@@ -57,4 +65,5 @@ module.exports = {
   shuffle,
   normalizeWords,
   sameWords,
+  normalizeWord,
 };

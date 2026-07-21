@@ -70,7 +70,14 @@ class _RoleSwitcherScreenState extends State<RoleSwitcherScreen> {
     final auth = context.read<AuthService>();
     final repo = context.read<GameRepository>();
     try {
-      final user = await auth.signInWithDisplayName(name);
+      // Placeholder location fields — this debug tool never collects real
+      // ones, and signInWithDisplayName requires non-empty values.
+      final user = await auth.signInWithDisplayName(
+        name,
+        country: 'Debug',
+        city: 'Debug',
+        companyOrOffice: 'Debug',
+      );
       final minPlayers = int.tryParse(_minPlayersController.text.trim()) ?? 8;
       final game = await repo.createGame(
         locationTag: _locationController.text.trim().isEmpty
@@ -79,6 +86,9 @@ class _RoleSwitcherScreenState extends State<RoleSwitcherScreen> {
         minPlayers: minPlayers,
         creatorId: user.id,
         creatorName: user.displayName,
+        creatorCountry: 'Debug',
+        creatorCity: 'Debug',
+        creatorCompanyOrOffice: 'Debug',
       );
       if (!mounted) return;
       setState(() {

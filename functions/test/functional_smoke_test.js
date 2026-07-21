@@ -76,6 +76,13 @@ async function main() {
 
   let gameSnap = await gameRef.get();
   assert.equal(gameSnap.data().status, "recruiting", "game should still be recruiting with 1/2 players");
+  assert.equal(gameSnap.data().creatorCountry, "", "creatorCountry defaults to '' when omitted");
+  assert.equal(gameSnap.data().creatorCity, "", "creatorCity defaults to '' when omitted");
+  assert.equal(
+    gameSnap.data().creatorCompanyOrOffice,
+    "",
+    "creatorCompanyOrOffice defaults to '' when omitted"
+  );
 
   await callCallable("addPlayer", joiner.idToken, {
     gameId,
@@ -128,6 +135,24 @@ async function main() {
   await gameRef.collection("players").doc(joiner.uid).delete();
   await new Promise((r) => setTimeout(r, 500));
   await gameRef.delete();
+
+  console.log("--- createGame(creatorCountry/City/CompanyOrOffice) ---");
+  const { gameId: locatedGameId } = await callCallable("createGame", creator.idToken, {
+    locationTag: "Smoke Test Floor With Location",
+    minPlayers: 4,
+    creatorId: creator.uid,
+    creatorName: "Creator",
+    creatorCountry: "Poland",
+    creatorCity: "Warsaw",
+    creatorCompanyOrOffice: "Acme Corp",
+  });
+  const locatedGameSnap = await db.collection("games").doc(locatedGameId).get();
+  assert.equal(locatedGameSnap.data().creatorCountry, "Poland");
+  assert.equal(locatedGameSnap.data().creatorCity, "Warsaw");
+  assert.equal(locatedGameSnap.data().creatorCompanyOrOffice, "Acme Corp");
+  console.log("PASS: creatorCountry/City/CompanyOrOffice persist when sent");
+  await db.collection("games").doc(locatedGameId).collection("players").doc(creator.uid).delete();
+  await db.collection("games").doc(locatedGameId).delete();
 
   console.log("All functional smoke checks passed.");
 }

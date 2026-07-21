@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:office_game_app/data/local/local_auth_service.dart';
 import 'package:office_game_app/data/local/local_game_repository.dart';
+import 'package:office_game_app/domain/repositories/auth_service.dart';
 import 'package:office_game_app/domain/repositories/game_repository.dart';
 import 'package:office_game_app/ui/entry/case_creation_screen.dart';
 import 'package:provider/provider.dart';
@@ -112,8 +114,11 @@ void main() {
       'creating with the default 6/2 split computes a recruitment threshold '
       'and execution window from that split, not a separate field', (tester) async {
     final repo = LocalGameRepository();
-    await tester.pumpWidget(Provider<GameRepository>.value(
-      value: repo,
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        Provider<GameRepository>.value(value: repo),
+        Provider<AuthService>.value(value: LocalAuthService()),
+      ],
       child: const MaterialApp(
         home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
       ),
@@ -136,8 +141,11 @@ void main() {
   testWidgets('the computed recruitment threshold tracks an edited villagers/mafia split',
       (tester) async {
     final repo = LocalGameRepository();
-    await tester.pumpWidget(Provider<GameRepository>.value(
-      value: repo,
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        Provider<GameRepository>.value(value: repo),
+        Provider<AuthService>.value(value: LocalAuthService()),
+      ],
       child: const MaterialApp(
         home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
       ),
@@ -162,8 +170,11 @@ void main() {
 
   testWidgets('the daily cutoff field still works, styled as a boxed data field', (tester) async {
     final repo = LocalGameRepository();
-    await tester.pumpWidget(Provider<GameRepository>.value(
-      value: repo,
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        Provider<GameRepository>.value(value: repo),
+        Provider<AuthService>.value(value: LocalAuthService()),
+      ],
       child: const MaterialApp(
         home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
       ),
@@ -184,8 +195,11 @@ void main() {
   testWidgets('typing non-numeric text into villagers/mafia shows a warning but still lets '
       'the case open, falling back the same way it always did', (tester) async {
     final repo = LocalGameRepository();
-    await tester.pumpWidget(Provider<GameRepository>.value(
-      value: repo,
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        Provider<GameRepository>.value(value: repo),
+        Provider<AuthService>.value(value: LocalAuthService()),
+      ],
       child: const MaterialApp(
         home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
       ),
@@ -229,8 +243,11 @@ void main() {
   testWidgets('an unparseable daily cutoff shows a warning but still creates the case with '
       'the 17:00 fallback', (tester) async {
     final repo = LocalGameRepository();
-    await tester.pumpWidget(Provider<GameRepository>.value(
-      value: repo,
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        Provider<GameRepository>.value(value: repo),
+        Provider<AuthService>.value(value: LocalAuthService()),
+      ],
       child: const MaterialApp(
         home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
       ),
@@ -265,8 +282,11 @@ void main() {
   testWidgets('the case rules field starts blank with an example hint, and is optional',
       (tester) async {
     final repo = LocalGameRepository();
-    await tester.pumpWidget(Provider<GameRepository>.value(
-      value: repo,
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        Provider<GameRepository>.value(value: repo),
+        Provider<AuthService>.value(value: LocalAuthService()),
+      ],
       child: const MaterialApp(
         home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
       ),
@@ -287,8 +307,11 @@ void main() {
 
   testWidgets('typed case rules text is passed through to the created case', (tester) async {
     final repo = LocalGameRepository();
-    await tester.pumpWidget(Provider<GameRepository>.value(
-      value: repo,
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        Provider<GameRepository>.value(value: repo),
+        Provider<AuthService>.value(value: LocalAuthService()),
+      ],
       child: const MaterialApp(
         home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
       ),

@@ -253,6 +253,9 @@ class LocalGameRepository implements GameRepository {
     String rulesDescription = '',
     bool isRestricted = false,
     List<String>? passphraseWords,
+    String creatorCountry = '',
+    String creatorCity = '',
+    String creatorCompanyOrOffice = '',
   }) async {
     // A case name can be reused once the earlier case with that name has
     // ended, but two simultaneously open cases sharing a name would be
@@ -287,6 +290,9 @@ class LocalGameRepository implements GameRepository {
       createdAt: DateTime.now(),
       isRestricted: isRestricted,
       creatorId: creatorId,
+      creatorCountry: creatorCountry,
+      creatorCity: creatorCity,
+      creatorCompanyOrOffice: creatorCompanyOrOffice,
     );
     final record = _GameRecord(game)..passphraseWords = normalizedPassphrase;
     _games[game.id] = record;

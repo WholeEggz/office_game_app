@@ -24,7 +24,11 @@ Future<void> _signInAndShowList(WidgetTester tester, LocalGameRepository repo) a
   // One frame for PlayerEntryScreen's initial resumeSession() check to
   // resolve before the registration form is in the tree.
   await tester.pump();
-  await tester.enterText(find.byType(TextField), 'Alice');
+  final fields = find.byType(TextField);
+  await tester.enterText(fields.at(0), 'Alice');
+  await tester.enterText(fields.at(1), 'Poland');
+  await tester.enterText(fields.at(2), 'Warsaw');
+  await tester.enterText(fields.at(3), 'Acme Corp');
   await tester.tap(find.text('Continue'));
   await tester.pump();
   await tester.pump();

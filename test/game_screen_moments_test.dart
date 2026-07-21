@@ -184,7 +184,11 @@ void main() {
     // resolve before the registration form is in the tree.
     await tester.pump();
 
-    await tester.enterText(find.byType(TextField), 'Alice');
+    final registrationFields = find.byType(TextField);
+    await tester.enterText(registrationFields.at(0), 'Alice');
+    await tester.enterText(registrationFields.at(1), 'Poland');
+    await tester.enterText(registrationFields.at(2), 'Warsaw');
+    await tester.enterText(registrationFields.at(3), 'Acme Corp');
     await tester.tap(find.text('Continue'));
     await tester.pump();
     await tester.pump();
@@ -251,7 +255,11 @@ void main() {
     ));
     await tester.pump();
 
-    await tester.enterText(find.byType(TextField), 'Alice');
+    final registrationFields = find.byType(TextField);
+    await tester.enterText(registrationFields.at(0), 'Alice');
+    await tester.enterText(registrationFields.at(1), 'Poland');
+    await tester.enterText(registrationFields.at(2), 'Warsaw');
+    await tester.enterText(registrationFields.at(3), 'Acme Corp');
     await tester.tap(find.text('Continue'));
     await tester.pump();
     await tester.pump();

@@ -168,9 +168,34 @@ service cloud.firestore {
       // recovered by resumeSession() on a later app launch since Firebase
       // Auth's own displayName field can't be used (see that class's doc
       // comment). Not game truth, purely this device's own profile fact,
-      // so client read/write is safe — same reasoning as `blocks`.
+      // so client read/write is safe — same reasoning as `blocks`. The
+      // country/city/companyOrOffice fields saveLocationProfile also
+      // writes here ride along under this same rule — still just this
+      // device's own profile facts.
       allow read: if isSelf(userId);
       allow write: if isSelf(userId);
+    }
+
+    // Deduped autocomplete sources for registration's location fields —
+    // {display, count} keyed by the normalized (trim+lowercase) value as
+    // the doc id itself, so "Acme Corp"/"ACME"/"acme corp." converge on
+    // one doc instead of fragmenting. Shared, cross-user reference data
+    // (not a secret, not game truth), so any signed-in user can read it
+    // for their own typeahead — same openness as `publicPlayers`. Writes
+    // only ever come from saveLocationProfile (Admin SDK bypass): a
+    // client incrementing a shared counter directly isn't something
+    // these rules can safely allow.
+    match /locations_countries/{value} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+    match /locations_cities/{value} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+    match /locations_companies/{value} {
+      allow read: if isSignedIn();
+      allow write: if false;
     }
   }
 }

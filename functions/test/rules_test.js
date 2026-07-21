@@ -116,6 +116,10 @@ async function main() {
     await db.collection(`games/${GAME_ID}/passphrase`).doc("secret").set({
       words: ["tiger", "blue", "moon"],
     });
+    await db.collection("locations_cities").doc("warsaw").set({
+      display: "Warsaw",
+      count: 1,
+    });
   });
 
   const villagerA = env.authenticatedContext("villagerA").firestore();
@@ -306,6 +310,21 @@ async function main() {
   );
   await check("unauthenticated reads a display name: DENIED", () =>
     assertFails(anon.doc("users/villagerA").get())
+  );
+
+  // --- locations_cities (and, identically, locations_countries/
+  // locations_companies): the shared, deduped autocomplete lookup docs
+  // saveLocationProfile upserts — top-level, not secret, so any
+  // signed-in user can read them for their own typeahead; only the
+  // Admin SDK (via saveLocationProfile) ever writes one. ---
+  await check("a signed-in user reads a location lookup doc: allowed", () =>
+    assertSucceeds(villagerA.doc("locations_cities/warsaw").get())
+  );
+  await check("unauthenticated reads a location lookup doc: DENIED", () =>
+    assertFails(anon.doc("locations_cities/warsaw").get())
+  );
+  await check("client cannot write a location lookup doc directly: DENIED", () =>
+    assertFails(villagerA.doc("locations_cities/warsaw").set({ display: "Tampered", count: 99 }))
   );
 
   // --- passphrase: a restricted case's actual words, client-readable only

@@ -152,8 +152,11 @@ void main() {
     testWidgets('checking "Restricted case" creates a restricted game and reveals its '
         'passphrase before proceeding', (tester) async {
       final repo = LocalGameRepository();
-      await tester.pumpWidget(Provider<GameRepository>.value(
-        value: repo,
+      await tester.pumpWidget(MultiProvider(
+        providers: [
+          Provider<GameRepository>.value(value: repo),
+          Provider<AuthService>.value(value: LocalAuthService()),
+        ],
         child: const MaterialApp(
           home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
         ),
@@ -184,8 +187,11 @@ void main() {
     testWidgets('leaving "Restricted case" unchecked creates a normal, unrestricted game',
         (tester) async {
       final repo = LocalGameRepository();
-      await tester.pumpWidget(Provider<GameRepository>.value(
-        value: repo,
+      await tester.pumpWidget(MultiProvider(
+        providers: [
+          Provider<GameRepository>.value(value: repo),
+          Provider<AuthService>.value(value: LocalAuthService()),
+        ],
         child: const MaterialApp(
           home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
         ),
@@ -212,7 +218,11 @@ void main() {
         child: const MaterialApp(home: PlayerEntryScreen()),
       ));
       await tester.pump();
-      await tester.enterText(find.byType(TextField), 'Bob');
+      final fields = find.byType(TextField);
+      await tester.enterText(fields.at(0), 'Bob');
+      await tester.enterText(fields.at(1), 'Poland');
+      await tester.enterText(fields.at(2), 'Warsaw');
+      await tester.enterText(fields.at(3), 'Acme Corp');
       await tester.tap(find.text('Continue'));
       await tester.pump();
       await tester.pump();

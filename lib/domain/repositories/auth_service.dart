@@ -4,6 +4,11 @@
 /// future Firebase implementation.
 typedef AppUser = ({String id, String displayName});
 
+/// An identity's own saved country/city/companyOrOffice — separate from
+/// [AppUser] since nothing besides registration and [AuthService]'s own
+/// methods needs it riding along everywhere an [AppUser] does.
+typedef LocationProfile = ({String country, String city, String companyOrOffice});
+
 /// Device-level identity, separate from per-game role/state (that's
 /// `Player`). The local implementation has no real authentication — it's a
 /// stand-in so `office_game_app` can simulate several people from one
@@ -21,7 +26,43 @@ abstract class AuthService {
   /// display name was already used) and makes it the current user. Meant
   /// for "sign in as yourself" — the one field where resuming the same
   /// identity across games by re-typing the same name is the point.
-  Future<AppUser> signInWithDisplayName(String displayName);
+  ///
+  /// [country]/[city]/[companyOrOffice] are saved alongside the identity
+  /// (not part of [AppUser] itself — nothing besides registration and the
+  /// suggest* methods below needs them) and folded into the shared
+  /// autocomplete directories those methods read from, so a later
+  /// registration typing a near-duplicate value (e.g. "Acme Corp" vs
+  /// "ACME") gets nudged toward reusing the same one.
+  Future<AppUser> signInWithDisplayName(
+    String displayName, {
+    required String country,
+    required String city,
+    required String companyOrOffice,
+  });
+
+  /// Already-registered countries/cities/companies starting with [prefix]
+  /// (case/whitespace-insensitive), most-used first where that's known —
+  /// purely a typing convenience for registration's location fields, never
+  /// a hard picker; a value with no match is still accepted as free text.
+  Future<List<String>> suggestCountries(String prefix);
+  Future<List<String>> suggestCities(String prefix);
+  Future<List<String>> suggestCompanies(String prefix);
+
+  /// The current identity's own saved location — null if nothing's been
+  /// saved (a `registerNewPlayer`-created debug identity never calls
+  /// [signInWithDisplayName], so never saves one). Powers "find your
+  /// case"'s company/city/country-match sort priority.
+  Future<LocationProfile?> currentLocationProfile();
+
+  /// Establishes at least a minimal (e.g. anonymous) session if there
+  /// isn't one already, without registering any identity or display name
+  /// — needed before the registration form's location fields can query
+  /// [suggestCountries]/[suggestCities]/[suggestCompanies], since those
+  /// read Firestore collections gated on `isSignedIn()`, and otherwise
+  /// nothing signs the device in until [signInWithDisplayName] runs (on
+  /// "Continue", after the fields have already been typed into). A no-op
+  /// wherever there's no real auth/rules concept to satisfy (Local mode).
+  Future<void> ensureSignedIn();
 
   /// Checks for an identity already signed in from a previous app launch
   /// and resolves its full [AppUser] — including [AppUser.displayName],

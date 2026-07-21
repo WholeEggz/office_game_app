@@ -85,6 +85,9 @@ class FirebaseGameRepository implements GameRepository {
     String rulesDescription = '',
     bool isRestricted = false,
     List<String>? passphraseWords,
+    String creatorCountry = '',
+    String creatorCity = '',
+    String creatorCompanyOrOffice = '',
   }) async {
     final result = await _call('createGame', {
       'locationTag': locationTag,
@@ -98,6 +101,9 @@ class FirebaseGameRepository implements GameRepository {
       'rulesDescription': rulesDescription,
       'isRestricted': isRestricted,
       'passphraseWords': passphraseWords,
+      'creatorCountry': creatorCountry,
+      'creatorCity': creatorCity,
+      'creatorCompanyOrOffice': creatorCompanyOrOffice,
     });
     final gameId = result['gameId'] as String;
     // Callers only ever use the returned game's `id` (case creation and the
@@ -119,6 +125,9 @@ class FirebaseGameRepository implements GameRepository {
       createdAt: DateTime.now(),
       isRestricted: isRestricted,
       creatorId: creatorId,
+      creatorCountry: creatorCountry,
+      creatorCity: creatorCity,
+      creatorCompanyOrOffice: creatorCompanyOrOffice,
     );
   }
 
@@ -384,6 +393,9 @@ class FirebaseGameRepository implements GameRepository {
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       isRestricted: data['isRestricted'] as bool? ?? false,
       creatorId: data['creatorId'] as String? ?? '',
+      creatorCountry: data['creatorCountry'] as String? ?? '',
+      creatorCity: data['creatorCity'] as String? ?? '',
+      creatorCompanyOrOffice: data['creatorCompanyOrOffice'] as String? ?? '',
     );
   }
 
