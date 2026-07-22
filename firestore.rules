@@ -161,6 +161,13 @@ service cloud.firestore {
         allow read: if isSelf(viewerId);
         allow write: if isSelf(viewerId);
       }
+
+      match /dismissedHints/{viewerId} {
+        // Mirrors `blocks` above exactly: a player's own tutorial-hint
+        // dismissals, not game truth, client-only in both directions.
+        allow read: if isSelf(viewerId);
+        allow write: if isSelf(viewerId);
+      }
     }
 
     match /users/{userId} {

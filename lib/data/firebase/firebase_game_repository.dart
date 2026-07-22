@@ -916,4 +916,33 @@ class FirebaseGameRepository implements GameRepository {
       return ids.cast<String>().toSet();
     });
   }
+
+  // dismissHint/watchDismissedHintIds are direct client reads/writes, not
+  // Cloud Functions — mirrors blockPlayer/watchBlockedPlayerIds exactly and
+  // for the same reason: a player's own preference, not game truth.
+
+  DocumentReference<Map<String, dynamic>> _dismissedHintsRef(String gameId, String viewerId) =>
+      _games.doc(gameId).collection('dismissedHints').doc(viewerId);
+
+  @override
+  Future<void> dismissHint({
+    required String gameId,
+    required String viewerId,
+    required String hintId,
+  }) async {
+    await _dismissedHintsRef(gameId, viewerId).set({
+      'hintIds': FieldValue.arrayUnion([hintId]),
+    }, SetOptions(merge: true));
+  }
+
+  @override
+  Stream<Set<String>> watchDismissedHintIds({
+    required String gameId,
+    required String viewerId,
+  }) {
+    return _dismissedHintsRef(gameId, viewerId).snapshots().map((snap) {
+      final ids = (snap.data()?['hintIds'] as List<dynamic>?) ?? const [];
+      return ids.cast<String>().toSet();
+    });
+  }
 }

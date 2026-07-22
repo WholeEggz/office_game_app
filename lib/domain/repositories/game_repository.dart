@@ -406,4 +406,22 @@ abstract class GameRepository {
     required String gameId,
     required String viewerId,
   });
+
+  /// Records that [viewerId] has manually dismissed tutorial hint [hintId]
+  /// for this game (see `domain/hints/hint_catalog.dart`). Only hints with
+  /// no natural completion signal of their own ever need this — most hints
+  /// derive completion from real game state instead. A per-viewer
+  /// preference, not game truth, same reasoning as [blockPlayer].
+  Future<void> dismissHint({
+    required String gameId,
+    required String viewerId,
+    required String hintId,
+  });
+
+  /// [viewerId]'s dismissed tutorial-hint ids for this game — see
+  /// [dismissHint].
+  Stream<Set<String>> watchDismissedHintIds({
+    required String gameId,
+    required String viewerId,
+  });
 }

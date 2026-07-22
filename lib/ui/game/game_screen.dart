@@ -25,7 +25,9 @@ import '../common/role_badge.dart';
 import '../common/vote_weight_pill.dart';
 import '../help/help_screen.dart';
 import '../profile/profile_screen.dart';
+import 'hint_progress_screen.dart';
 import 'moment_dialog.dart';
+import 'tutorial_hint_banner.dart';
 
 /// Runs a repository action that may throw a [StateError] from a race
 /// condition or a stale view of shared state (someone else's action beat
@@ -213,6 +215,7 @@ class _GameScreenState extends State<GameScreen> {
   late final Stream<List<Vote>> _votesStream;
   late final Stream<List<Vote>> _voteHistoryStream;
   late final Stream<Set<String>> _blockedPlayerIdsStream;
+  late final Stream<Set<String>> _dismissedHintIdsStream;
 
   @override
   void initState() {
@@ -239,6 +242,9 @@ class _GameScreenState extends State<GameScreen> {
     _voteHistoryStream = repo.watchVoteHistory(widget.gameId).asBroadcastStream();
     _blockedPlayerIdsStream = repo
         .watchBlockedPlayerIds(gameId: widget.gameId, viewerId: widget.playerId)
+        .asBroadcastStream();
+    _dismissedHintIdsStream = repo
+        .watchDismissedHintIds(gameId: widget.gameId, viewerId: widget.playerId)
         .asBroadcastStream();
   }
 
@@ -351,6 +357,7 @@ class _GameScreenState extends State<GameScreen> {
           votesStream: _votesStream,
           voteHistoryStream: _voteHistoryStream,
           blockedPlayerIdsStream: _blockedPlayerIdsStream,
+          dismissedHintIdsStream: _dismissedHintIdsStream,
         );
       },
     );
@@ -887,6 +894,7 @@ class _Dashboard extends StatefulWidget {
   final Stream<List<Vote>> votesStream;
   final Stream<List<Vote>> voteHistoryStream;
   final Stream<Set<String>> blockedPlayerIdsStream;
+  final Stream<Set<String>> dismissedHintIdsStream;
 
   const _Dashboard({
     required this.gameId,
@@ -898,6 +906,7 @@ class _Dashboard extends StatefulWidget {
     required this.votesStream,
     required this.voteHistoryStream,
     required this.blockedPlayerIdsStream,
+    required this.dismissedHintIdsStream,
   });
 
   @override
@@ -933,6 +942,15 @@ class _DashboardState extends State<_Dashboard> {
             icon: Icon(PhosphorIconsLight.userCircle, color: AppColors.textSecondary),
             tooltip: 'Profile',
             onPressed: () => openProfile(context, viewerId: self.id, viewerName: self.name),
+          ),
+          IconButton(
+            icon: Icon(PhosphorIconsLight.listChecks, color: AppColors.textSecondary),
+            tooltip: 'Getting started',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => HintProgressScreen(gameId: gameId, playerId: self.id),
+              ),
+            ),
           ),
           IconButton(
             icon: Icon(PhosphorIconsLight.bookOpenText, color: AppColors.textSecondary),
@@ -1017,6 +1035,20 @@ class _DashboardState extends State<_Dashboard> {
                 ),
               ],
               const SizedBox(height: AppSpacing.sm),
+              Padding(
+                key: const ValueKey('tutorial_hint_banner'),
+                padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+                child: TutorialHintBanner(
+                  gameId: gameId,
+                  game: game,
+                  self: self,
+                  observationsStream: widget.observationsStream,
+                  votesStream: widget.votesStream,
+                  voteHistoryStream: widget.voteHistoryStream,
+                  mafiaThreadStream: widget.mafiaThreadStream,
+                  dismissedHintIdsStream: widget.dismissedHintIdsStream,
+                ),
+              ),
               // Every section below gets a stable Key. Without one, an
               // unkeyed list matches children by position — when a
               // conditional section (e.g. this banner) appears or

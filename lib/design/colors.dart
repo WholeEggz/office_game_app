@@ -32,4 +32,10 @@ abstract final class AppColors {
   static const crimsonSoft = Color(0xFF3A1216);
   static const crimsonText = Color(0xFFE0949C);
   static const onCrimson = Color(0xFFF5E4E6);
+
+  // Sage — tutorial / guidance accent
+  static const sage = Color(0xFF4B8B5A);
+  static const sageStrong = Color(0xFF3A6E47);
+  static const sageSoft = Color(0xFF16281B);
+  static const sageText = Color(0xFFA9D9B4);
 }

@@ -96,6 +96,11 @@ class _GameRecord {
   final Map<String, Set<String>> blockedByViewer = {};
   final blockChanges = StreamController<void>.broadcast();
 
+  /// Mirrors [blockedByViewer] exactly, for tutorial-hint dismissals
+  /// instead of blocks — see `GameRepository.dismissHint`.
+  final Map<String, Set<String>> dismissedHintsByViewer = {};
+  final dismissedHintChanges = StreamController<void>.broadcast();
+
   /// Normalized (trimmed, lowercased) passphrase words for a restricted
   /// case — null for an unrestricted one. Deliberately not exposed via
   /// the public [Game] model; [LocalGameRepository.verifyPassphrase] and
@@ -1313,5 +1318,28 @@ class LocalGameRepository implements GameRepository {
     Set<String> current() => Set.unmodifiable(record.blockedByViewer[viewerId] ?? const {});
     yield current();
     yield* record.blockChanges.stream.map((_) => current());
+  }
+
+  @override
+  Future<void> dismissHint({
+    required String gameId,
+    required String viewerId,
+    required String hintId,
+  }) async {
+    final record = _record(gameId);
+    record.dismissedHintsByViewer.putIfAbsent(viewerId, () => {}).add(hintId);
+    record.dismissedHintChanges.add(null);
+  }
+
+  @override
+  Stream<Set<String>> watchDismissedHintIds({
+    required String gameId,
+    required String viewerId,
+  }) async* {
+    final record = _record(gameId);
+    Set<String> current() =>
+        Set.unmodifiable(record.dismissedHintsByViewer[viewerId] ?? const {});
+    yield current();
+    yield* record.dismissedHintChanges.stream.map((_) => current());
   }
 }
