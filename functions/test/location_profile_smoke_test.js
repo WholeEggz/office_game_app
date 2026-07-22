@@ -56,7 +56,10 @@ async function callCallable(name, idToken, data) {
 
 async function cleanup(uids) {
   for (const collection of ["locations_countries", "locations_cities", "locations_companies"]) {
-    for (const id of ["poland", "warsaw", "acme corp"]) {
+    for (const id of [
+      "poland", "warsaw", "acme corp", "portugal", "porto", "beta inc",
+      "germany", "berlin", "globex inc",
+    ]) {
       await db.collection(collection).doc(id).delete().catch(() => {});
     }
   }
@@ -68,6 +71,7 @@ async function cleanup(uids) {
 async function main() {
   const alice = await mintUserAndIdToken("Alice");
   const bob = await mintUserAndIdToken("Bob");
+  const cara = await mintUserAndIdToken("Cara");
 
   console.log("--- saveLocationProfile writes users/{uid} and the lookup docs ---");
   await callCallable("saveLocationProfile", alice.idToken, {
@@ -85,7 +89,7 @@ async function main() {
   const cityDoc = await db.collection("locations_cities").doc("warsaw").get();
   assert.equal(cityDoc.data().display, "Warsaw");
   assert.equal(cityDoc.data().count, 1);
-  console.log("PASS: locations_cities/warsaw created with count 1 and first-seen casing");
+  console.log("PASS: locations_cities/warsaw created with count 1, Title Cased");
 
   console.log("\n--- a second, differently-cased registration increments the same doc ---");
   await callCallable("saveLocationProfile", bob.idToken, {
@@ -96,10 +100,11 @@ async function main() {
 
   const cityDocAfter = await db.collection("locations_cities").doc("warsaw").get();
   assert.equal(cityDocAfter.data().count, 2);
-  // Still "Warsaw" — the first-seen casing isn't overwritten by a later,
-  // differently-cased registration converging on the same normalized id.
+  // Still "Warsaw" — not because the first-seen casing is protected from
+  // being overwritten (display is rewritten on every save, see below),
+  // simply because titleCase("WARSAW") converges on the same "Warsaw".
   assert.equal(cityDocAfter.data().display, "Warsaw");
-  console.log("PASS: converges on one doc (count 2), keeping the first-seen display casing");
+  console.log("PASS: converges on one doc (count 2), still Title Cased");
 
   const bobDoc = await db.collection("users").doc(bob.uid).get();
   assert.equal(bobDoc.data().city, "WARSAW");
@@ -120,7 +125,86 @@ async function main() {
   assert.equal(writeRes.status, 403);
   console.log("PASS: a client cannot write locations_cities/warsaw directly");
 
-  await cleanup([alice.uid, bob.uid]);
+  console.log("\n--- editing a profile decrements the old value's count, not just the new one ---");
+  // Alice is currently the sole registrant of Poland/Warsaw/Acme Corp
+  // (count 2 from the differently-cased Bob registration above) — move her
+  // to a brand-new location entirely.
+  await callCallable("saveLocationProfile", alice.idToken, {
+    country: "Portugal",
+    city: "Porto",
+    companyOrOffice: "Beta Inc",
+  });
+
+  const warsawAfterEdit = await db.collection("locations_cities").doc("warsaw").get();
+  assert.equal(warsawAfterEdit.data().count, 1);
+  console.log("PASS: warsaw's count drops from 2 to 1 once Alice moves away from it");
+
+  const portoDoc = await db.collection("locations_cities").doc("porto").get();
+  assert.equal(portoDoc.data().count, 1);
+  assert.equal(portoDoc.data().display, "Porto");
+  console.log("PASS: porto is created fresh with count 1");
+
+  const aliceDocAfterEdit = await db.collection("users").doc(alice.uid).get();
+  assert.equal(aliceDocAfterEdit.data().city, "Porto");
+  console.log("PASS: users/{uid} reflects the edited location");
+
+  console.log(
+    "\n--- editing away the last registrant of a value deletes its now-empty lookup doc ---",
+  );
+  // Bob is still Warsaw's only remaining registrant — moving him away too
+  // should delete the warsaw doc entirely rather than leaving count: 0.
+  await callCallable("saveLocationProfile", bob.idToken, {
+    country: "poland",
+    city: "Krakow",
+    companyOrOffice: "ACME CORP",
+  });
+
+  const warsawAfterBothLeave = await db.collection("locations_cities").doc("warsaw").get();
+  assert.equal(warsawAfterBothLeave.exists, false);
+  console.log("PASS: warsaw's lookup doc is deleted once its count would hit 0");
+
+  console.log("\n--- suggestions are always Title Cased, even if typed badly ---");
+  await callCallable("saveLocationProfile", cara.idToken, {
+    country: "GERMANY",
+    city: "berlin",
+    companyOrOffice: "globex INC",
+  });
+
+  const germanyDoc = await db.collection("locations_countries").doc("germany").get();
+  assert.equal(germanyDoc.data().display, "Germany");
+  const berlinDoc = await db.collection("locations_cities").doc("berlin").get();
+  assert.equal(berlinDoc.data().display, "Berlin");
+  const globexDoc = await db.collection("locations_companies").doc("globex inc").get();
+  assert.equal(globexDoc.data().display, "Globex Inc");
+  console.log("PASS: GERMANY/berlin/globex INC all suggest back Title Cased");
+
+  const caraDoc = await db.collection("users").doc(cara.uid).get();
+  assert.equal(caraDoc.data().companyOrOffice, "globex INC");
+  console.log("PASS: users/{uid} still stores Cara's own as-typed casing");
+
+  console.log(
+    "\n--- a stale, badly-cased display (predating this normalization) self-heals on the next save ---",
+  );
+  // Simulates data written before titleCase existed — display stuck
+  // lowercase, same shape saveLocationProfile itself would have produced
+  // pre-fix. Directly seeded via the admin SDK since the callable itself
+  // can no longer produce this shape.
+  await db.collection("locations_countries").doc("spain").set({ display: "spain", count: 1 });
+
+  await callCallable("saveLocationProfile", cara.idToken, {
+    country: "Spain",
+    city: "berlin",
+    companyOrOffice: "globex INC",
+  });
+
+  const spainDoc = await db.collection("locations_countries").doc("spain").get();
+  assert.equal(spainDoc.data().display, "Spain");
+  assert.equal(spainDoc.data().count, 2);
+  console.log("PASS: spain's stale lowercase display is corrected to 'Spain' on the next save");
+
+  await cleanup([alice.uid, bob.uid, cara.uid]);
+  await db.collection("locations_cities").doc("krakow").delete().catch(() => {});
+  await db.collection("locations_countries").doc("spain").delete().catch(() => {});
   console.log("\nAll saveLocationProfile smoke checks passed.");
 }
 

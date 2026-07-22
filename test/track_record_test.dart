@@ -198,5 +198,45 @@ void main() {
       // if it later ended, wasUnmasked staying true would still exclude it.
       expect(record.survivedAsMafiaCount, 0);
     });
+
+    test('a successfully executed recruitment counts toward recruitmentsExecuted', () async {
+      final repo = LocalGameRepository();
+      // 1 mafia, 5 villagers — mirrors game_moments_test.dart's recruitment
+      // setup: recruiting one villager lands on 2 mafia vs 4 villagers, not
+      // parity, so this stays focused on the recruitment count itself.
+      final game = await repo.createGame(
+        locationTag: 'Test Office',
+        minPlayers: 6,
+        creatorId: 'p1',
+        creatorName: 'Alice',
+        mafiaCount: 1,
+        recruitmentUnlockThreshold: 1.0,
+      );
+      for (var i = 2; i <= 6; i++) {
+        await repo.addPlayer(gameId: game.id, playerId: 'p$i', name: 'Player $i');
+      }
+      final started = await repo.watchGame(game.id).first;
+      final recruiter = started.mafia.single;
+      final target = started.villagers.first;
+
+      await repo.proposeRecruitment(
+        gameId: game.id,
+        recruiterId: recruiter.id,
+        targetPlayerId: target.id,
+        sign: 'a specific pen left on their desk',
+      );
+      final proposalId =
+          (await repo.watchMafiaThread(gameId: game.id, viewerId: recruiter.id).first).single.id;
+      await repo.executeRecruitment(gameId: game.id, proposalId: proposalId, playerId: recruiter.id);
+      await repo.respondToRecruitment(gameId: game.id, playerId: target.id, accept: true);
+
+      final recruiterRecord = await computeTrackRecord(repo: repo, viewerId: recruiter.id);
+      expect(recruiterRecord.recruitmentsExecuted, 1);
+
+      // The recruited target switched sides but didn't execute anything
+      // themselves — this is specifically about who did the recruiting.
+      final targetRecord = await computeTrackRecord(repo: repo, viewerId: target.id);
+      expect(targetRecord.recruitmentsExecuted, 0);
+    });
   });
 }

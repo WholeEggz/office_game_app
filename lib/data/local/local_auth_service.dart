@@ -29,10 +29,28 @@ class LocalAuthService implements AuthService {
 
   static String _normalize(String value) => value.trim().toLowerCase();
 
+  // The shared, in-memory sibling of the Firebase backend's
+  // locations_*/{value}.display field (see saveLocationProfile's doc
+  // comment) — the value suggested back is always "Title Cased" the same
+  // way, regardless of how it was actually typed.
+  static String _titleCase(String value) {
+    final trimmed = value.trim().toLowerCase();
+    if (trimmed.isEmpty) return trimmed;
+    return trimmed
+        .split(RegExp(r'\s+'))
+        .map((word) => word.isEmpty ? word : '${word[0].toUpperCase()}${word.substring(1)}')
+        .join(' ');
+  }
+
+  // Overwritten (not putIfAbsent) on every call, mirroring
+  // saveLocationProfile's self-healing display rewrite — so a value that
+  // somehow ended up recorded with different casing before this
+  // normalization existed corrects itself the next time anyone registers
+  // or edits into the same normalized value.
   void _recordLocation(Map<String, String> directory, String value) {
     final normalized = _normalize(value);
     if (normalized.isEmpty) return;
-    directory.putIfAbsent(normalized, () => value);
+    directory[normalized] = _titleCase(value);
   }
 
   List<String> _suggest(Map<String, String> directory, String prefix) {
@@ -88,6 +106,20 @@ class LocalAuthService implements AuthService {
     final user = _current;
     if (user == null) return null;
     return _profiles[user.id];
+  }
+
+  @override
+  Future<void> updateLocationProfile({
+    required String country,
+    required String city,
+    required String companyOrOffice,
+  }) async {
+    final user = _current;
+    if (user == null) return;
+    _recordLocation(_countries, country);
+    _recordLocation(_cities, city);
+    _recordLocation(_companies, companyOrOffice);
+    _profiles[user.id] = (country: country, city: city, companyOrOffice: companyOrOffice);
   }
 
   // No real auth/rules to satisfy in Local mode — the suggest* methods

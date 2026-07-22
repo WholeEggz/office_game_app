@@ -54,6 +54,18 @@ abstract class AuthService {
   /// case"'s company/city/country-match sort priority.
   Future<LocationProfile?> currentLocationProfile();
 
+  /// Updates the current identity's saved location, independent of
+  /// [signInWithDisplayName] — for editing an already-registered profile
+  /// (ProfileScreen) without touching display name or session state. Takes
+  /// the full triple even when only one field actually changed, matching
+  /// [signInWithDisplayName]'s location parameters and the
+  /// `saveLocationProfile` Cloud Function's signature underneath.
+  Future<void> updateLocationProfile({
+    required String country,
+    required String city,
+    required String companyOrOffice,
+  });
+
   /// Establishes at least a minimal (e.g. anonymous) session if there
   /// isn't one already, without registering any identity or display name
   /// — needed before the registration form's location fields can query

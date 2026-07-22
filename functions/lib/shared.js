@@ -57,6 +57,22 @@ function normalizeWord(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+// The shared, cross-user display casing for a location suggestion —
+// whoever registers a given country/city/company first, the value
+// everyone else sees suggested back is always "Title Cased" the same way,
+// regardless of how it was actually typed ("ACME CORP"/"acme corp" both
+// become "Acme Corp"). Only used for the locations_*/{value}.display
+// field; each user's own `users/{uid}` record keeps their own as-typed
+// casing untouched.
+function titleCase(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .map((word) => (word ? word[0].toUpperCase() + word.slice(1) : word))
+    .join(" ");
+}
+
 module.exports = {
   STARTING_VOTE_WEIGHT,
   requireString,
@@ -66,4 +82,5 @@ module.exports = {
   normalizeWords,
   sameWords,
   normalizeWord,
+  titleCase,
 };

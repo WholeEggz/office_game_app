@@ -13,6 +13,7 @@ const {
   normalizeWords,
   sameWords,
   normalizeWord,
+  titleCase,
 } = require("./lib/shared");
 
 // Must run before requiring ./lib/roundResolution — that module calls
@@ -268,13 +269,14 @@ exports.verifyCasePassphrase = onCall(async (request) => {
 });
 
 // Registration's country/city/company-or-office fields (see
-// PlayerEntryScreen's registration form) — a Cloud Function rather than
-// the direct client write `users/{uid}`'s own displayName field already
-// uses, because this also upserts the shared, cross-user
-// locations_countries/locations_cities/locations_companies lookup docs
-// that autocomplete reads from (suggestCountries/suggestCities/
-// suggestCompanies), and letting arbitrary clients increment a shared
-// counter directly isn't something firestore.rules can express safely.
+// PlayerEntryScreen's registration form), and later profile edits (see
+// ProfileScreen) — a Cloud Function rather than the direct client write
+// `users/{uid}`'s own displayName field already uses, because this also
+// upserts the shared, cross-user locations_countries/locations_cities/
+// locations_companies lookup docs that autocomplete reads from
+// (suggestCountries/suggestCities/suggestCompanies), and letting arbitrary
+// clients increment a shared counter directly isn't something
+// firestore.rules can express safely.
 exports.saveLocationProfile = onCall(async (request) => {
   const auth = requireAuth(request);
   const data = request.data || {};
@@ -283,33 +285,64 @@ exports.saveLocationProfile = onCall(async (request) => {
   const companyOrOffice = requireString(data.companyOrOffice, "companyOrOffice");
 
   const userRef = db.collection("users").doc(auth.uid);
-  const countryRef = db.collection("locations_countries").doc(normalizeWord(country));
-  const cityRef = db.collection("locations_cities").doc(normalizeWord(city));
-  const companyRef = db.collection("locations_companies").doc(normalizeWord(companyOrOffice));
+  const dimensions = [
+    { field: "country", value: country, collection: "locations_countries" },
+    { field: "city", value: city, collection: "locations_cities" },
+    { field: "companyOrOffice", value: companyOrOffice, collection: "locations_companies" },
+  ];
 
   await db.runTransaction(async (tx) => {
     // All reads before any writes — Firestore transaction requirement.
-    const [countrySnap, citySnap, companySnap] = await Promise.all([
-      tx.get(countryRef),
-      tx.get(cityRef),
-      tx.get(companyRef),
+    // Read the user's *previous* values first (if any) so an edit that
+    // changes a field can decrement its old lookup doc's count, not just
+    // increment the new one — otherwise repeated edits (not just one-time
+    // registration) would leave stale counts inflating old values forever.
+    const userSnap = await tx.get(userRef);
+    const oldData = userSnap.data() || {};
+
+    const newRefs = dimensions.map((d) => ({
+      ...d,
+      ref: db.collection(d.collection).doc(normalizeWord(d.value)),
+    }));
+    const oldRefs = dimensions
+      .filter((d) => oldData[d.field] && normalizeWord(oldData[d.field]) !== normalizeWord(d.value))
+      .map((d) => ({ ...d, ref: db.collection(d.collection).doc(normalizeWord(oldData[d.field])) }));
+
+    const [newSnaps, oldSnaps] = await Promise.all([
+      Promise.all(newRefs.map((d) => tx.get(d.ref))),
+      Promise.all(oldRefs.map((d) => tx.get(d.ref))),
     ]);
+
     tx.set(userRef, { country, city, companyOrOffice }, { merge: true });
-    tx.set(
-      countryRef,
-      countrySnap.exists ? { count: FieldValue.increment(1) } : { display: country, count: 1 },
-      { merge: true }
-    );
-    tx.set(
-      cityRef,
-      citySnap.exists ? { count: FieldValue.increment(1) } : { display: city, count: 1 },
-      { merge: true }
-    );
-    tx.set(
-      companyRef,
-      companySnap.exists ? { count: FieldValue.increment(1) } : { display: companyOrOffice, count: 1 },
-      { merge: true }
-    );
+
+    oldRefs.forEach((d, i) => {
+      const snap = oldSnaps[i];
+      if (!snap.exists) return;
+      const remaining = (snap.data().count || 0) - 1;
+      if (remaining <= 0) {
+        tx.delete(d.ref);
+      } else {
+        tx.update(d.ref, { count: FieldValue.increment(-1) });
+      }
+    });
+
+    newRefs.forEach((d, i) => {
+      const snap = newSnaps[i];
+      // display is rewritten to titleCase(d.value) on every write, not
+      // just the first — self-healing, so a value that somehow got
+      // stored in a bad casing before this normalization existed (or a
+      // stray non-title-cased write some other way) corrects itself the
+      // next time anyone registers or edits into the same normalized
+      // value, rather than being stuck with whichever casing happened to
+      // write it first forever.
+      tx.set(
+        d.ref,
+        snap.exists
+          ? { display: titleCase(d.value), count: FieldValue.increment(1) }
+          : { display: titleCase(d.value), count: 1 },
+        { merge: true }
+      );
+    });
   });
 
   return { ok: true };

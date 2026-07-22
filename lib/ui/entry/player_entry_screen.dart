@@ -18,7 +18,7 @@ import '../common/autocomplete_field.dart';
 import '../common/dossier_card.dart';
 import '../game/game_screen.dart';
 import '../help/help_screen.dart';
-import '../stats/track_record_screen.dart';
+import '../profile/profile_screen.dart';
 import 'app_entry_gate.dart';
 import 'case_creation_screen.dart';
 import 'case_details_screen.dart';
@@ -373,10 +373,10 @@ class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
         actions: [
           if (_user case final user?)
             IconButton(
-              icon: Icon(PhosphorIconsLight.chartBar, color: AppColors.textSecondary),
-              tooltip: 'Track record',
+              icon: Icon(PhosphorIconsLight.userCircle, color: AppColors.textSecondary),
+              tooltip: 'Profile',
               onPressed: () =>
-                  openTrackRecord(context, viewerId: user.id, viewerName: user.displayName),
+                  openProfile(context, viewerId: user.id, viewerName: user.displayName),
             ),
           IconButton(
             icon: Icon(PhosphorIconsLight.bookOpenText, color: AppColors.textSecondary),

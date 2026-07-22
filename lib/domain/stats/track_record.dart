@@ -58,6 +58,13 @@ class TrackRecord {
   /// stopping at the first miss.
   final int currentStreak;
 
+  /// Recruitments this player personally executed as the mafia-side
+  /// recruiter (section 8) — a count of [GameMomentType.recruitmentExecuted]
+  /// moments, the same shape as [correctUnmasks]/[casesWon]/[casesLost].
+  /// Feeds the "Recruiter" badge (see `achievements.dart`); nothing else
+  /// in the track record surfaces this signal.
+  final int recruitmentsExecuted;
+
   const TrackRecord({
     required this.casesPlayed,
     required this.casesAsWitness,
@@ -69,6 +76,7 @@ class TrackRecord {
     required this.voteAccuracy,
     required this.survivedAsMafiaCount,
     required this.currentStreak,
+    required this.recruitmentsExecuted,
   });
 
   static const empty = TrackRecord(
@@ -82,6 +90,7 @@ class TrackRecord {
     voteAccuracy: null,
     survivedAsMafiaCount: 0,
     currentStreak: 0,
+    recruitmentsExecuted: 0,
   );
 }
 
@@ -148,6 +157,8 @@ Future<TrackRecord> computeTrackRecord({
   final correctUnmasks = allMoments.where((m) => m.type == GameMomentType.correctVoteReward).length;
   final casesWon = allMoments.where((m) => m.type == GameMomentType.finaleWin).length;
   final casesLost = allMoments.where((m) => m.type == GameMomentType.finaleLoss).length;
+  final recruitmentsExecuted =
+      allMoments.where((m) => m.type == GameMomentType.recruitmentExecuted).length;
 
   return TrackRecord(
     casesPlayed: myGames.length,
@@ -160,5 +171,6 @@ Future<TrackRecord> computeTrackRecord({
     voteAccuracy: votesCast == 0 ? null : correctUnmasks / votesCast,
     survivedAsMafiaCount: survivedAsMafiaCount,
     currentStreak: computeCurrentStreak(allMoments),
+    recruitmentsExecuted: recruitmentsExecuted,
   );
 }

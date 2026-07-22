@@ -102,18 +102,37 @@ class FirebaseAuthService implements AuthService {
       {'displayName': displayName},
       SetOptions(merge: true),
     );
-    // A separate Cloud Function (not a direct client write, unlike
-    // displayName above) — it also upserts the shared, cross-user
-    // locations_countries/locations_cities/locations_companies lookup
-    // docs that suggestCountries/suggestCities/suggestCompanies read
-    // from, which firestore.rules can't let an arbitrary client do
-    // directly (see that function's doc comment).
-    await _functions.httpsCallable('saveLocationProfile').call<Map<String, dynamic>>({
+    await _saveLocationProfile(country: country, city: city, companyOrOffice: companyOrOffice);
+    return (id: user.uid, displayName: displayName);
+  }
+
+  // A separate Cloud Function (not a direct client write, unlike
+  // displayName above) — it also upserts the shared, cross-user
+  // locations_countries/locations_cities/locations_companies lookup
+  // docs that suggestCountries/suggestCities/suggestCompanies read
+  // from, which firestore.rules can't let an arbitrary client do
+  // directly (see that function's doc comment). Shared by
+  // signInWithDisplayName (registration) and updateLocationProfile
+  // (editing an already-registered profile) — same call either way.
+  Future<void> _saveLocationProfile({
+    required String country,
+    required String city,
+    required String companyOrOffice,
+  }) {
+    return _functions.httpsCallable('saveLocationProfile').call<Map<String, dynamic>>({
       'country': country,
       'city': city,
       'companyOrOffice': companyOrOffice,
     });
-    return (id: user.uid, displayName: displayName);
+  }
+
+  @override
+  Future<void> updateLocationProfile({
+    required String country,
+    required String city,
+    required String companyOrOffice,
+  }) {
+    return _saveLocationProfile(country: country, city: city, companyOrOffice: companyOrOffice);
   }
 
   Future<List<String>> _suggest(String collection, String prefix) async {
