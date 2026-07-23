@@ -173,6 +173,14 @@ void main() {
       mafiaCount: 1,
     );
 
+    // The registration/case-list screens' static hint banners add enough
+    // height to push content below the default 800x600 test viewport — a
+    // taller one avoids needing to script scrolling by hand.
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     await tester.pumpWidget(MultiProvider(
       providers: [
         Provider<GameRepository>.value(value: repo),
@@ -245,6 +253,14 @@ void main() {
       creatorName: 'Creator',
       mafiaCount: 1,
     );
+
+    // The registration/case-list screens' static hint banners add enough
+    // height to push content below the default 800x600 test viewport — a
+    // taller one avoids needing to script scrolling by hand.
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(MultiProvider(
       providers: [

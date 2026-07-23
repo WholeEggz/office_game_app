@@ -10,6 +10,7 @@ import '../../domain/passphrase_words.dart';
 import '../../domain/repositories/auth_service.dart';
 import '../../domain/repositories/game_repository.dart';
 import '../common/dossier_card.dart';
+import '../common/static_hint_banner.dart';
 import '../game/game_screen.dart';
 
 /// Lets a real player configure a new case's settings before it exists,
@@ -236,7 +237,9 @@ class _CaseCreationScreenState extends State<CaseCreationScreen> {
           padding: const EdgeInsets.all(AppSpacing.lg),
           children: [
             Text('Case settings', style: AppTypography.displayMedium),
-            const SizedBox(height: AppSpacing.xl),
+            const SizedBox(height: AppSpacing.lg),
+            const StaticHintBanner(id: 'case_creation_restricted_location'),
+            const SizedBox(height: AppSpacing.lg),
             DossierCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,

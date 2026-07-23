@@ -25,6 +25,10 @@ class LocalAuthService implements AuthService {
   // display values, never say who registered which one.
   final _profiles = <String, LocationProfile>{};
 
+  // Pre-game hint dismissals (see AuthService.dismissHint), keyed by uid —
+  // same per-identity storage shape as _profiles.
+  final _dismissedHints = <String, Set<String>>{};
+
   static const _maxSuggestions = 8;
 
   static String _normalize(String value) => value.trim().toLowerCase();
@@ -155,5 +159,19 @@ class LocalAuthService implements AuthService {
   Future<void> signOut() async {
     _current = null;
     _controller.add(null);
+  }
+
+  @override
+  Future<Set<String>> fetchDismissedHints() async {
+    final user = _current;
+    if (user == null) return const {};
+    return Set.unmodifiable(_dismissedHints[user.id] ?? const {});
+  }
+
+  @override
+  Future<void> dismissHint(String hintId) async {
+    final user = _current;
+    if (user == null) return;
+    _dismissedHints.putIfAbsent(user.id, () => {}).add(hintId);
   }
 }

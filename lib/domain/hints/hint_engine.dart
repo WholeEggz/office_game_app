@@ -5,9 +5,13 @@ enum HintStatus { completed, active, notYetRelevant }
 
 /// Evaluates one [HintDefinition] against [context] — pure, no I/O, so the
 /// banner and the full progress list share exactly one notion of status.
+/// A hint counts as completed either through its own [HintDefinition.isCompleted]
+/// check or because the player tapped "Got it" for its current
+/// [HintDefinition.dismissKey] — the two are equivalent from here on.
 HintStatus evaluateHint(HintDefinition hint, HintContext context) {
   if (!hint.appliesTo(context)) return HintStatus.notYetRelevant;
-  if (hint.isCompleted(context)) return HintStatus.completed;
+  final dismissed = context.dismissedHintIds.contains(hint.dismissKey(context));
+  if (dismissed || hint.isCompleted(context)) return HintStatus.completed;
   if (hint.isRelevant(context)) return HintStatus.active;
   return HintStatus.notYetRelevant;
 }

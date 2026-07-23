@@ -16,6 +16,7 @@ import '../../domain/repositories/game_repository.dart';
 import '../common/async_tap_guard.dart';
 import '../common/autocomplete_field.dart';
 import '../common/dossier_card.dart';
+import '../common/static_hint_banner.dart';
 import '../game/game_screen.dart';
 import '../help/help_screen.dart';
 import '../profile/profile_screen.dart';
@@ -425,6 +426,8 @@ class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
                 onSubmitted: (_) => _register(),
               ),
               const SizedBox(height: AppSpacing.lg),
+              const StaticHintBanner(id: 'registration_location'),
+              const SizedBox(height: AppSpacing.lg),
               AutocompleteField(
                 controller: _countryController,
                 label: 'Country',
@@ -473,7 +476,9 @@ class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
             Text('Find your case', style: AppTypography.displayMedium),
             const SizedBox(height: AppSpacing.xs),
             Text('Signed in as ${user.displayName}.', style: AppTypography.bodySmall),
-            const SizedBox(height: AppSpacing.xl),
+            const SizedBox(height: AppSpacing.lg),
+            const StaticHintBanner(id: 'case_list_location_sort'),
+            const SizedBox(height: AppSpacing.lg),
             if (games.isNotEmpty) ...[
               _CaseListControls(
                 sort: _sort,

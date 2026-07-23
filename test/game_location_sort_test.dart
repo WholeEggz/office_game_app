@@ -50,6 +50,14 @@ void main() {
       required String city,
       required String companyOrOffice,
     }) async {
+      // The case-list screen's static hint banner adds enough height to
+      // push later tiles below the default 800x600 test viewport — a
+      // taller one avoids needing to script scrolling by hand.
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
       await auth.signInWithDisplayName(
         'Viewer',
         country: country,

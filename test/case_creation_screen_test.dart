@@ -7,6 +7,24 @@ import 'package:office_game_app/domain/repositories/game_repository.dart';
 import 'package:office_game_app/ui/entry/case_creation_screen.dart';
 import 'package:provider/provider.dart';
 
+// The screen's static hint banner needs an AuthService in the tree just to
+// render (it checks whether the hint was already dismissed) — every pump
+// goes through this helper so none of the tests below have to know that.
+Future<void> _pumpCaseCreation(WidgetTester tester, {GameRepository? repo}) async {
+  await tester.pumpWidget(MultiProvider(
+    providers: [
+      Provider<GameRepository>.value(value: repo ?? LocalGameRepository()),
+      Provider<AuthService>.value(value: LocalAuthService()),
+    ],
+    child: const MaterialApp(
+      home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
+    ),
+  ));
+  // One frame for the hint banner's own async dismissed-state check to
+  // resolve before assertions run.
+  await tester.pump();
+}
+
 void main() {
   Finder villagersField() => find.byKey(const ValueKey('roster_villagers_field'));
   Finder mafiaField() => find.byKey(const ValueKey('roster_mafia_field'));
@@ -17,9 +35,7 @@ void main() {
       tester.widget<Text>(find.byKey(ValueKey(key))).data!;
 
   testWidgets('starts with fixed defaults: 6 villagers, 2 mafia, 8 players', (tester) async {
-    await tester.pumpWidget(const MaterialApp(
-      home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
-    ));
+    await _pumpCaseCreation(tester);
 
     expect(tester.widget<TextField>(villagersField()).controller!.text, '6');
     expect(tester.widget<TextField>(mafiaField()).controller!.text, '2');
@@ -28,9 +44,7 @@ void main() {
 
   testWidgets('editing "villagers" updates the derived players total live, leaves mafia alone',
       (tester) async {
-    await tester.pumpWidget(const MaterialApp(
-      home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
-    ));
+    await _pumpCaseCreation(tester);
 
     await tester.enterText(villagersField(), '10');
     await tester.pump();
@@ -41,9 +55,7 @@ void main() {
 
   testWidgets('editing "mafia" updates the derived players total live, leaves villagers alone',
       (tester) async {
-    await tester.pumpWidget(const MaterialApp(
-      home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
-    ));
+    await _pumpCaseCreation(tester);
 
     await tester.enterText(mafiaField(), '3');
     await tester.pump();
@@ -54,9 +66,7 @@ void main() {
 
   testWidgets('a zero or blank mafia count floors the players total at villagers + 1, not villagers',
       (tester) async {
-    await tester.pumpWidget(const MaterialApp(
-      home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
-    ));
+    await _pumpCaseCreation(tester);
 
     await tester.enterText(villagersField(), '4');
     await tester.pump();
@@ -70,9 +80,7 @@ void main() {
 
   testWidgets('the roster caption spells out the live numbers instead of "this many"',
       (tester) async {
-    await tester.pumpWidget(const MaterialApp(
-      home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
-    ));
+    await _pumpCaseCreation(tester);
 
     expect(find.textContaining('this many'), findsNothing);
     expect(
@@ -94,18 +102,14 @@ void main() {
   });
 
   testWidgets('the removed "villagers per mafia" and "hours to act" fields are gone', (tester) async {
-    await tester.pumpWidget(const MaterialApp(
-      home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
-    ));
+    await _pumpCaseCreation(tester);
 
     expect(find.textContaining('Villagers per mafia'), findsNothing);
     expect(find.textContaining('Hours to act'), findsNothing);
   });
 
   testWidgets('the "defaults match the concept doc" blurb is gone', (tester) async {
-    await tester.pumpWidget(const MaterialApp(
-      home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
-    ));
+    await _pumpCaseCreation(tester);
 
     expect(find.textContaining('Defaults match'), findsNothing);
   });
@@ -114,15 +118,7 @@ void main() {
       'creating with the default 6/2 split computes a recruitment threshold '
       'and execution window from that split, not a separate field', (tester) async {
     final repo = LocalGameRepository();
-    await tester.pumpWidget(MultiProvider(
-      providers: [
-        Provider<GameRepository>.value(value: repo),
-        Provider<AuthService>.value(value: LocalAuthService()),
-      ],
-      child: const MaterialApp(
-        home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
-      ),
-    ));
+    await _pumpCaseCreation(tester, repo: repo);
 
     await tester.ensureVisible(find.text('Open the case'));
     await tester.pumpAndSettle();
@@ -141,15 +137,7 @@ void main() {
   testWidgets('the computed recruitment threshold tracks an edited villagers/mafia split',
       (tester) async {
     final repo = LocalGameRepository();
-    await tester.pumpWidget(MultiProvider(
-      providers: [
-        Provider<GameRepository>.value(value: repo),
-        Provider<AuthService>.value(value: LocalAuthService()),
-      ],
-      child: const MaterialApp(
-        home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
-      ),
-    ));
+    await _pumpCaseCreation(tester, repo: repo);
 
     await tester.enterText(villagersField(), '8');
     await tester.pump();
@@ -170,15 +158,7 @@ void main() {
 
   testWidgets('the daily cutoff field still works, styled as a boxed data field', (tester) async {
     final repo = LocalGameRepository();
-    await tester.pumpWidget(MultiProvider(
-      providers: [
-        Provider<GameRepository>.value(value: repo),
-        Provider<AuthService>.value(value: LocalAuthService()),
-      ],
-      child: const MaterialApp(
-        home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
-      ),
-    ));
+    await _pumpCaseCreation(tester, repo: repo);
 
     expect(tester.widget<TextField>(cutoffField()).controller!.text, '17:00');
 
@@ -195,15 +175,7 @@ void main() {
   testWidgets('typing non-numeric text into villagers/mafia shows a warning but still lets '
       'the case open, falling back the same way it always did', (tester) async {
     final repo = LocalGameRepository();
-    await tester.pumpWidget(MultiProvider(
-      providers: [
-        Provider<GameRepository>.value(value: repo),
-        Provider<AuthService>.value(value: LocalAuthService()),
-      ],
-      child: const MaterialApp(
-        home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
-      ),
-    ));
+    await _pumpCaseCreation(tester, repo: repo);
 
     expect(find.text('Enter a number'), findsNothing);
 
@@ -227,9 +199,7 @@ void main() {
 
   testWidgets('clearing an invalid villagers/mafia value makes the warning go away',
       (tester) async {
-    await tester.pumpWidget(const MaterialApp(
-      home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
-    ));
+    await _pumpCaseCreation(tester);
 
     await tester.enterText(villagersField(), 'nope');
     await tester.pump();
@@ -243,15 +213,7 @@ void main() {
   testWidgets('an unparseable daily cutoff shows a warning but still creates the case with '
       'the 17:00 fallback', (tester) async {
     final repo = LocalGameRepository();
-    await tester.pumpWidget(MultiProvider(
-      providers: [
-        Provider<GameRepository>.value(value: repo),
-        Provider<AuthService>.value(value: LocalAuthService()),
-      ],
-      child: const MaterialApp(
-        home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
-      ),
-    ));
+    await _pumpCaseCreation(tester, repo: repo);
 
     expect(find.textContaining('Use HH:mm'), findsNothing);
 
@@ -270,9 +232,7 @@ void main() {
 
   testWidgets('an out-of-range daily cutoff (e.g. 25:99) is treated as invalid too',
       (tester) async {
-    await tester.pumpWidget(const MaterialApp(
-      home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
-    ));
+    await _pumpCaseCreation(tester);
 
     await tester.enterText(cutoffField(), '25:99');
     await tester.pump();
@@ -282,15 +242,7 @@ void main() {
   testWidgets('the case rules field starts blank with an example hint, and is optional',
       (tester) async {
     final repo = LocalGameRepository();
-    await tester.pumpWidget(MultiProvider(
-      providers: [
-        Provider<GameRepository>.value(value: repo),
-        Provider<AuthService>.value(value: LocalAuthService()),
-      ],
-      child: const MaterialApp(
-        home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
-      ),
-    ));
+    await _pumpCaseCreation(tester, repo: repo);
 
     expect(tester.widget<TextField>(rulesField()).controller!.text, isEmpty);
     expect(find.textContaining('e.g. players use real names'), findsOneWidget);
@@ -307,15 +259,7 @@ void main() {
 
   testWidgets('typed case rules text is passed through to the created case', (tester) async {
     final repo = LocalGameRepository();
-    await tester.pumpWidget(MultiProvider(
-      providers: [
-        Provider<GameRepository>.value(value: repo),
-        Provider<AuthService>.value(value: LocalAuthService()),
-      ],
-      child: const MaterialApp(
-        home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
-      ),
-    ));
+    await _pumpCaseCreation(tester, repo: repo);
 
     await tester.enterText(rulesField(), 'Identities are anonymous — figure it out yourself.');
     await tester.ensureVisible(find.text('Open the case'));

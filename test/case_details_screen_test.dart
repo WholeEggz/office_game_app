@@ -14,6 +14,14 @@ import 'package:provider/provider.dart';
 /// `Timer` gets scheduled, keeping these tests free of the teardown
 /// cleanup `game_screen_moments_test.dart`'s tests need for active games.
 Future<void> _signInAndShowList(WidgetTester tester, LocalGameRepository repo) async {
+  // The registration form's static location hint adds enough height to
+  // push "Continue" below the default 800x600 test viewport — a taller
+  // one avoids needing to script scrolling by hand for every tap/lookup.
+  tester.view.physicalSize = const Size(800, 1200);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+
   await tester.pumpWidget(MultiProvider(
     providers: [
       Provider<GameRepository>.value(value: repo),

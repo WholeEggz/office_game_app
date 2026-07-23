@@ -161,6 +161,10 @@ void main() {
           home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
         ),
       ));
+      // One frame for the static hint banner's own async dismissed-state
+      // check to resolve — it fades in afterward, shifting everything
+      // below it, so later ensureVisible calls need the settled layout.
+      await tester.pump();
 
       await tester.ensureVisible(find.byKey(const ValueKey('restricted_case_checkbox')));
       await tester.pumpAndSettle();
@@ -196,6 +200,8 @@ void main() {
           home: CaseCreationScreen(creator: (id: 'p1', displayName: 'Alice')),
         ),
       ));
+      // See the matching comment in the test above.
+      await tester.pump();
 
       await tester.ensureVisible(find.text('Open the case'));
       await tester.pumpAndSettle();
@@ -210,6 +216,14 @@ void main() {
 
   group('PlayerEntryScreen', () {
     Future<void> signIn(WidgetTester tester, LocalGameRepository repo, LocalAuthService auth) async {
+      // The registration/case-list screens' static hint banners add enough
+      // height to push content below the default 800x600 test viewport —
+      // a taller one avoids needing to script scrolling by hand.
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
       await tester.pumpWidget(MultiProvider(
         providers: [
           Provider<GameRepository>.value(value: repo),

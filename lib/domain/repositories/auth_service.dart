@@ -101,4 +101,15 @@ abstract class AuthService {
   Future<void> switchToUser(String userId);
 
   Future<void> signOut();
+
+  /// Hint ids the current identity has permanently dismissed on a
+  /// pre-game screen (registration, "Find your case", case creation) —
+  /// see `StaticHintBanner`. Player-level, not game-level, since those
+  /// screens exist before any `Game`/`gameId` does, unlike
+  /// `GameRepository.dismissHint`. Empty when there's no current user.
+  Future<Set<String>> fetchDismissedHints();
+
+  /// Records that the current identity dismissed pre-game hint [hintId] —
+  /// see [fetchDismissedHints]. A no-op when there's no current user.
+  Future<void> dismissHint(String hintId);
 }

@@ -16,9 +16,8 @@ class HintContext {
   final List<Vote> voteHistory;
   final List<MafiaThreadEntry> mafiaThread;
 
-  /// Hint ids [self] has manually dismissed for this game — only hints with
-  /// no natural completion signal of their own ever consult this (see
-  /// `HintDefinition.dismissible`).
+  /// Dismiss keys (see `HintDefinition.dismissKey`) [self] has tapped "Got
+  /// it" on for this game — every hint consults this, in `hint_engine.dart`.
   final Set<String> dismissedHintIds;
 
   const HintContext({

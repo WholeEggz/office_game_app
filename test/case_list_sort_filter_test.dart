@@ -8,6 +8,14 @@ import 'package:office_game_app/ui/entry/player_entry_screen.dart';
 import 'package:provider/provider.dart';
 
 Future<void> _signIn(WidgetTester tester, LocalGameRepository repo) async {
+  // The registration form's static location hint adds enough height to
+  // push "Continue" below the default 800x600 test viewport — a taller
+  // one avoids needing to script scrolling by hand for every tap/lookup.
+  tester.view.physicalSize = const Size(800, 1200);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+
   await tester.pumpWidget(MultiProvider(
     providers: [
       Provider<GameRepository>.value(value: repo),

@@ -231,4 +231,27 @@ class FirebaseAuthService implements AuthService {
 
   @override
   Future<void> signOut() => _auth.signOut();
+
+  // Direct client reads/writes on the same `users/{uid}` doc displayName
+  // already uses — no rules change needed, that doc is already fully
+  // read/write for its own owner (see firestore.rules' `users` comment).
+
+  @override
+  Future<Set<String>> fetchDismissedHints() async {
+    final user = _auth.currentUser;
+    if (user == null) return const {};
+    final doc = await _db.collection('users').doc(user.uid).get();
+    final ids = (doc.data()?['dismissedHints'] as List<dynamic>?) ?? const [];
+    return ids.cast<String>().toSet();
+  }
+
+  @override
+  Future<void> dismissHint(String hintId) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    await _db.collection('users').doc(user.uid).set(
+      {'dismissedHints': FieldValue.arrayUnion([hintId])},
+      SetOptions(merge: true),
+    );
+  }
 }

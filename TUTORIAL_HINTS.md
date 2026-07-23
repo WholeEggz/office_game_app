@@ -1,0 +1,183 @@
+# Tutorial hints
+
+*The source of truth for what's actually implemented is
+`lib/domain/hints/hint_catalog.dart` — this table is a human-readable
+mirror of it for anyone who wants the shape of the whole hint system at a
+glance, without reading Dart. Keep the two in sync whenever either
+changes.*
+
+The tutorial system (`lib/domain/hints/`, `lib/ui/game/tutorial_hint_banner.dart`,
+`lib/ui/game/hint_progress_screen.dart`) is a small rule engine, not a
+scripted sequence: each hint is a pure `relevant`/`completed` predicate
+over live game state, evaluated fresh every time. The top-of-screen
+banner shows the single highest-`priority` hint that's currently relevant
+and not completed; the full progress screen (the checklist icon in the
+game's app bar) shows every hint's status side by side, onboarding and
+recurring alike — see "The progress list vs. the banner" below for what
+that means for a recurring hint's status over time. It also includes the
+pre-game hints (registration, "Find your case", case creation — see
+"Static onboarding hints" below) ahead of the in-game ones, so the list
+covers the whole journey, not just what happened after joining this case.
+
+Every hint gets a "Got it" button (bottom-right of the banner) — tapping
+it dismisses that hint. `welcome_help` also gets a second button ("Open
+Help") alongside it, since its message points at a specific other screen;
+every other hint just has "Got it", since they're all about something on
+the current screen already.
+
+`onboarding` hints complete once and never resurface for that case (but
+are scoped per case, not per player for life — see "Known limitations"
+below). `recurring` hints re-derive their status every time, since they
+key off state that resets each round (e.g. "have I voted *this* round") —
+"Got it" on one of these only silences *that occurrence*, not the
+reminder forever (see "Dismissal" below).
+
+## The banner's fade + stagger
+
+`TutorialHintBanner` doesn't just snap from one hint to the next. When
+the shown hint is dismissed or naturally completes, it fades out, then a
+~900ms gap passes with nothing shown, then whatever's next fades in. This
+is deliberate — replacing one nudge with another the instant it's
+dismissed reads as the app nagging the player; the pause gives them a
+beat of breathing room. See `_TutorialHintBannerState._onContext` for the
+actual state machine.
+
+## Dismissal
+
+Every hint's "Got it" writes to the same `GameRepository.dismissHint`/
+`watchDismissedHintIds` per-game ledger (mirrors `blocks`, see
+`firestore.rules`). What differs is the *key* used
+(`HintDefinition.dismissKey`):
+
+- **`onboarding` hints** (no `dismissDiscriminator`): keyed by `id` alone
+  — dismissal is permanent for this game.
+- **`recurring` hints** (have a `dismissDiscriminator`): keyed by `id` +
+  whatever that function returns for the current context (the round
+  number, or the current signal's text). Once that discriminator changes
+  — a new round starts, a new signal goes out — the key changes too, so
+  the hint is free to reappear. "Got it" on `vote_before_cutoff` this
+  round doesn't silence it next round.
+
+| id | scope | audience | priority | dismiss discriminator | message | relevant when | completed when |
+|---|---|---|---|---|---|---|---|
+| `welcome_help` | onboarding | everyone | 100 | — (permanent) | "New here? Check Help for how a round works." | always, until dismissed | never on its own — purely "Got it"-driven |
+| `elimination_ack_pending` | recurring | everyone | 95 | current signal's method text | "Check today's signal — confirm it before the window lapses." | the elimination signal has executed and isn't confirmed yet | the elimination signal is confirmed |
+| `recruitment_response_pending` | recurring | everyone | 95 | current signal's sign text | "Someone reached out — check the recruitment sign and respond." | the recruitment sign has executed and isn't confirmed yet | the recruitment sign is confirmed |
+| `say_hello` | onboarding | everyone | 90 | — (permanent) | "Say hello in the Observation Log so others know you're around." | player has never logged an observation | player has logged at least one observation (any round) |
+| `mafia_thread_intro` | onboarding | current Mafia only | 85 | — (permanent) | "Coordinate privately with your team in the Mafia Thread." | player is current Mafia and has never posted to the Mafia Thread | player has posted to the Mafia Thread at least once |
+| `cast_first_vote` | onboarding | everyone | 80 | — (permanent) | "When you're ready, cast a vote for who you suspect." | player has never cast a vote | player has cast at least one vote (any round) |
+| `vote_before_cutoff` | recurring | everyone | 60 | current round number | "Cast your vote for today before {dailyCutoffTime}." | player hasn't voted this round | player has voted this round |
+| `notice_something` | recurring | everyone | 50 | current round number | "Did you notice something? Log it in the Observation Log." | player hasn't logged an observation this round | player has logged an observation this round |
+
+(Table above is sorted by `priority`, highest first — the same order the
+banner picks between simultaneously-active hints.)
+
+## The progress list vs. the banner
+
+`HintProgressScreen` lists every hint that applies to the player —
+onboarding and recurring alike (see the filter in `HintProgressScreen.build`:
+`allHintStatuses(...).where((e) => e.$1.appliesTo(hintContext))`). The
+difference between the two scopes shows up in how a hint's status
+*behaves* there over time, not in whether it's listed at all: an
+onboarding hint's status only ever moves one way (Not started -> Pending
+-> Completed, and stays Completed); a recurring hint's can cycle back to
+Pending next round even after reading Completed this round — that's
+expected, not a bug, since the round itself is the same discriminator
+used to reset "Got it" dismissals (see "Dismissal" above).
+
+## Known limitations
+
+- **`elimination_ack_pending`/`recruitment_response_pending` can't tell
+  "I personally checked and wasn't the target" from "someone else
+  confirmed it."** There's no per-player acknowledgement flag in the
+  domain model — only the global `Game.eliminationSignalConfirmed`/
+  `recruitmentSignConfirmed` flags the real banners already use. In
+  practice the window is short: it closes the moment the real target
+  confirms, since that ends the round.
+- **`say_hello`'s "ever posted" check only sees the last 3 rounds** of
+  observations, since the repository purges anything older — a player
+  who posted once long ago and has been quiet since can see this nudge
+  again. Treated as an acceptable side effect (it's still a reasonable
+  nudge to re-engage), not a bug.
+- **Onboarding hints are scoped per case, not per player for life.**
+  Every onboarding hint's dismissal/completion state resets for each new
+  case a player joins, mirroring how observations/votes/the mafia thread
+  are already per-case data. There's no cross-case player-preferences
+  store to make it lifetime-scoped instead — flag if that's ever worth
+  adding. (The *static*, pre-game hints below are the exception — they
+  use a genuinely player-level store instead, since they have no game to
+  scope to.)
+
+## Static onboarding hints (pre-game screens)
+
+The registration, case-list ("Find your case"), and case-creation screens
+have no `Game`/`Player` to hang a `HintDefinition` off of — they render
+before a game exists or before the player has joined one. These use a
+separate, simpler mechanism: `StaticHintBanner`
+(`lib/ui/common/static_hint_banner.dart`) — same sage-green look and
+"Got it" + fade-out behavior as the in-game banner, but backed by a plain
+id+message pair (no relevant/completed predicates, no stagger sequencing
+— each screen only ever shows one) from `staticHintCatalog`
+(`lib/domain/hints/static_hint_catalog.dart`), *not* `hintCatalog`.
+`StaticHintBanner` takes just an `id` and looks its message up there — the
+one place that pairing is written down, so the banner and
+`HintProgressScreen`'s merged list can never disagree about the wording.
+
+Dismissal here goes through `AuthService.dismissHint`/
+`fetchDismissedHints` instead of `GameRepository` — a *player*-level
+ledger (piggybacked on the same `users/{uid}` Firestore doc `displayName`
+already lives on), since these screens exist before any `gameId` does.
+Once dismissed, a given `id` never shows again for that identity (on any
+device, in any case), and reads as "Completed" in `HintProgressScreen`.
+
+| id | screen | file | message |
+|---|---|---|---|
+| `registration_location` | Registration | `lib/ui/entry/player_entry_screen.dart` (`_buildRegisterForm`) | "The location you enter here becomes a case's location if you start one later, so keep it accurate." |
+| `case_list_location_sort` | Find your case | `lib/ui/entry/player_entry_screen.dart` (`_buildGameList`) | "Cases near your office float to the top of this list — join one below, or start your own if you don't see it yet." |
+| `case_creation_restricted_location` | Case creation | `lib/ui/entry/case_creation_screen.dart` | "Mark this case Restricted if you want to control who can join with a passphrase. Its location comes from your own profile — the one you set when you registered." |
+
+To add another one of these: add a `StaticHintInfo(id: '...', message:
+'...')` entry to `staticHintCatalog`, then drop a
+`const StaticHintBanner(id: '...')` at the relevant spot in the screen's
+build method — pick a globally-unique `id` (it's a flat, player-wide
+namespace, not scoped per screen). It'll automatically show up in
+`HintProgressScreen` too, ahead of the in-game entries. No test in
+`hint_engine_test.dart` needed (there's no relevant/completed logic to
+verify).
+
+`StaticHintBanner` needs an `AuthService` above it in the widget tree
+just to render (it checks dismissed state on `initState`, before the
+fade-in even starts) — any widget test that pumps a screen using one
+needs `Provider<AuthService>.value(...)` in the tree even if the test
+never touches auth directly, or it throws `ProviderNotFoundException`.
+That async check also means the banner's true height isn't known until
+one frame after the initial pump — a widget test that calls
+`ensureVisible`/taps something further down the same scrollable page
+needs an extra `await tester.pump();` right after `pumpWidget` before
+doing so, or the layout can shift out from under an early `ensureVisible`
+call. Both gotchas are already handled via the `_pumpCaseCreation` helper
+in `case_creation_screen_test.dart` and inline comments in
+`player_entry_registration_test.dart`, `case_list_sort_filter_test.dart`,
+`case_details_screen_test.dart`, `game_location_sort_test.dart`,
+`restricted_case_test.dart`, and `game_screen_moments_test.dart`.
+
+## Adding or changing an in-game hint
+
+(For a pre-game one, see "Static onboarding hints" above instead —
+different catalog, no predicates.)
+
+1. Add/edit the `HintDefinition` entry in `hint_catalog.dart` (message,
+   `isRelevant`, `isCompleted`, `priority`, `audience`, `scope`,
+   `dismissDiscriminator` for a `recurring` hint, `actionLabel`/
+   `actionTarget` if it should point at another screen like
+   `welcome_help` does).
+2. If it needs a new `actionTarget`, add the enum value to
+   `HintActionTarget` (`hint_definition.dart`) and a matching case in
+   `_performAction` (`tutorial_hint_banner.dart`) — that's the only place
+   allowed to know about `Navigator`/screens, keeping `hint_catalog.dart`
+   a pure domain file.
+3. Add a matching case to `_iconFor` in `hint_progress_screen.dart` (a
+   placeholder Phosphor icon is fine until real artwork exists).
+4. Update the table above.
+5. Add/update a case in `test/hint_engine_test.dart` covering the new
+   relevant/completed/dismiss logic.
