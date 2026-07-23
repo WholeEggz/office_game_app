@@ -126,6 +126,75 @@ void main() {
       expect(tags, ['Same Company Case', 'Same City Case', 'No Match Case']);
       expect(find.text('Your company'), findsOneWidget);
       expect(find.text('Your city'), findsOneWidget);
+      // A non-matching case still says *where* it actually is, rather
+      // than showing no location info at all.
+      expect(find.text('Paris, France'), findsOneWidget);
+    });
+
+    testWidgets('a case with no location on file shows no location caption at all',
+        (tester) async {
+      final repo = LocalGameRepository();
+      final auth = LocalAuthService();
+      await repo.createGame(
+        locationTag: 'No Location Case',
+        minPlayers: 4,
+        creatorId: 'creator1',
+        creatorName: 'Creator1',
+      );
+
+      await pumpSignedIn(tester, repo, auth,
+          country: 'Poland', city: 'Warsaw', companyOrOffice: 'Acme Corp');
+
+      expect(find.text('No Location Case'), findsOneWidget);
+      expect(find.text('Your company'), findsNothing);
+      expect(find.text('Your city'), findsNothing);
+      expect(find.text('Your country'), findsNothing);
+    });
+
+    testWidgets(
+        'a same-named city in a different country does not count as "Your city"',
+        (tester) async {
+      final repo = LocalGameRepository();
+      final auth = LocalAuthService();
+      await repo.createGame(
+        locationTag: 'Other Springfield Case',
+        minPlayers: 4,
+        creatorId: 'creator1',
+        creatorName: 'Creator1',
+        creatorCountry: 'USA',
+        creatorCity: 'Springfield',
+        creatorCompanyOrOffice: 'Globex',
+      );
+
+      await pumpSignedIn(tester, repo, auth,
+          country: 'Australia', city: 'Springfield', companyOrOffice: 'Acme Corp');
+
+      expect(find.text('Your city'), findsNothing);
+      expect(find.text('Your country'), findsNothing);
+      // Still says where it actually is, per the previous fix.
+      expect(find.text('Springfield, USA'), findsOneWidget);
+    });
+
+    testWidgets(
+        'a same-named company in a different city only counts as "Your country", '
+        'not "Your company"', (tester) async {
+      final repo = LocalGameRepository();
+      final auth = LocalAuthService();
+      await repo.createGame(
+        locationTag: 'Krakow Acme Case',
+        minPlayers: 4,
+        creatorId: 'creator1',
+        creatorName: 'Creator1',
+        creatorCountry: 'Poland',
+        creatorCity: 'Krakow',
+        creatorCompanyOrOffice: 'Acme Corp',
+      );
+
+      await pumpSignedIn(tester, repo, auth,
+          country: 'Poland', city: 'Warsaw', companyOrOffice: 'Acme Corp');
+
+      expect(find.text('Your company'), findsNothing);
+      expect(find.text('Your country'), findsOneWidget);
     });
 
     testWidgets(

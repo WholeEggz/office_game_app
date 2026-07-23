@@ -133,15 +133,21 @@ String _normalizeLocation(String value) => value.trim().toLowerCase();
 /// 3 (no match, including when [viewer] itself is null). Blank fields
 /// never count as a match on either side, so two cases that both simply
 /// never recorded a location don't spuriously "match" each other.
+///
+/// Each tier requires every broader one to match too — a city name alone
+/// isn't specific enough (Warsaw, Poland vs. a "Warsaw" elsewhere), and
+/// since this is an in-person office game, sharing just a company name
+/// isn't a real match either unless it's the same physical office: same
+/// company only counts once city and country already do.
 int _locationTier(Game game, LocationProfile? viewer) {
   if (viewer == null) return 3;
-  final company = _normalizeLocation(viewer.companyOrOffice);
-  final city = _normalizeLocation(viewer.city);
   final country = _normalizeLocation(viewer.country);
-  if (company.isNotEmpty && _normalizeLocation(game.creatorCompanyOrOffice) == company) return 0;
-  if (city.isNotEmpty && _normalizeLocation(game.creatorCity) == city) return 1;
-  if (country.isNotEmpty && _normalizeLocation(game.creatorCountry) == country) return 2;
-  return 3;
+  if (country.isEmpty || _normalizeLocation(game.creatorCountry) != country) return 3;
+  final city = _normalizeLocation(viewer.city);
+  if (city.isEmpty || _normalizeLocation(game.creatorCity) != city) return 2;
+  final company = _normalizeLocation(viewer.companyOrOffice);
+  if (company.isEmpty || _normalizeLocation(game.creatorCompanyOrOffice) != company) return 1;
+  return 0;
 }
 
 String? _locationTierBadge(int tier) => switch (tier) {
@@ -150,6 +156,23 @@ String? _locationTierBadge(int tier) => switch (tier) {
       2 => 'Your country',
       _ => null,
     };
+
+/// What a case tile's location line should say: the match badge
+/// ("Your company"/etc., shown in brass) when [game] matches [viewer]'s
+/// own location, or else [game]'s own actual city/country (shown muted)
+/// so a case that's simply elsewhere still says *where*, instead of the
+/// tile going blank — which otherwise reads as broken, especially when
+/// browsing a list where nothing happens to match. Null (nothing shown)
+/// only when the case never recorded a location at all.
+({String? label, bool isMatch}) _locationCaption(Game game, LocationProfile? viewer) {
+  final badge = _locationTierBadge(_locationTier(game, viewer));
+  if (badge != null) return (label: badge, isMatch: true);
+  final city = game.creatorCity.trim();
+  final country = game.creatorCountry.trim();
+  if (city.isEmpty && country.isEmpty) return (label: null, isMatch: false);
+  final label = [city, country].where((s) => s.isNotEmpty).join(', ');
+  return (label: label, isMatch: false);
+}
 
 enum _SortOption {
   newest('Newest first'),
@@ -512,7 +535,7 @@ class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
                 _GameListTile(
                   game: game,
                   selfId: user.id,
-                  locationBadge: _locationTierBadge(_locationTier(game, _viewerProfile)),
+                  locationCaption: _locationCaption(game, _viewerProfile),
                   // Already-joined cases still go straight back in
                   // (unchanged — TESTING.md §0.9); a not-yet-joined
                   // restricted case is gated behind its passphrase first;
@@ -552,13 +575,13 @@ class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
 class _GameListTile extends StatelessWidget {
   final Game game;
   final String selfId;
-  final String? locationBadge;
+  final ({String? label, bool isMatch}) locationCaption;
   final Future<void> Function() onTap;
 
   const _GameListTile({
     required this.game,
     required this.selfId,
-    required this.locationBadge,
+    required this.locationCaption,
     required this.onTap,
   });
 
@@ -592,11 +615,13 @@ class _GameListTile extends StatelessWidget {
                     Expanded(child: Text(game.locationTag, style: AppTypography.heading)),
                   ],
                 ),
-                if (locationBadge != null) ...[
+                if (locationCaption.label != null) ...[
                   const SizedBox(height: AppSpacing.xs),
                   Text(
-                    locationBadge!,
-                    style: AppTypography.dataSmall.copyWith(color: AppColors.brass),
+                    locationCaption.label!,
+                    style: AppTypography.dataSmall.copyWith(
+                      color: locationCaption.isMatch ? AppColors.brass : AppColors.textMuted,
+                    ),
                   ),
                 ],
                 const SizedBox(height: AppSpacing.xs),
