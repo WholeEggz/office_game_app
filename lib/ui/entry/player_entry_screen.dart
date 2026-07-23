@@ -228,6 +228,22 @@ class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
     });
   }
 
+  /// Opens the profile screen, then refreshes [_viewerProfile] once the
+  /// player is back here — [openProfile] has no way to report back
+  /// whether the location was actually edited (it doesn't pop with a
+  /// result), so this just unconditionally re-fetches. Without this,
+  /// editing your location and returning here left every case's
+  /// "Your company"/"Your city" badge and sort order comparing against
+  /// the pre-edit profile until the app was fully relaunched (the only
+  /// other thing that calls _resumeSession).
+  Future<void> _openProfile(AppUser user) async {
+    await openProfile(context, viewerId: user.id, viewerName: user.displayName);
+    if (!mounted) return;
+    final profile = await context.read<AuthService>().currentLocationProfile();
+    if (!mounted) return;
+    setState(() => _viewerProfile = profile);
+  }
+
   /// Debug-only: signs out and resets straight back to the very first
   /// screen a cold launch shows (WelcomeScreen, via AppEntryGate — see its
   /// own doc comment), clearing the whole navigation stack so there's no
@@ -376,8 +392,7 @@ class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
             IconButton(
               icon: Icon(PhosphorIconsLight.userCircle, color: AppColors.textSecondary),
               tooltip: 'Profile',
-              onPressed: () =>
-                  openProfile(context, viewerId: user.id, viewerName: user.displayName),
+              onPressed: () => _openProfile(user),
             ),
           IconButton(
             icon: Icon(PhosphorIconsLight.bookOpenText, color: AppColors.textSecondary),

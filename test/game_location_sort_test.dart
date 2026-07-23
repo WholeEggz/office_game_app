@@ -127,5 +127,45 @@ void main() {
       expect(find.text('Your company'), findsOneWidget);
       expect(find.text('Your city'), findsOneWidget);
     });
+
+    testWidgets(
+        'editing your location in Profile and returning re-badges the case list '
+        'against the new location, not the stale one', (tester) async {
+      final repo = LocalGameRepository();
+      final auth = LocalAuthService();
+
+      await repo.createGame(
+        locationTag: 'Acme Case',
+        minPlayers: 4,
+        creatorId: 'creator1',
+        creatorName: 'Creator1',
+        creatorCountry: 'Poland',
+        creatorCity: 'Warsaw',
+        creatorCompanyOrOffice: 'Acme Corp',
+      );
+
+      await pumpSignedIn(tester, repo, auth,
+          country: 'Poland', city: 'Warsaw', companyOrOffice: 'Acme Corp');
+
+      expect(find.text('Your company'), findsOneWidget);
+
+      // Open Profile, edit the company field, save, and come back.
+      await tester.tap(find.byTooltip('Profile'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Edit Company or office'));
+      await tester.pump();
+      await tester.enterText(find.byType(TextField).last, 'Globex');
+      await tester.tap(find.byTooltip('Save'));
+      await tester.pumpAndSettle();
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      // Back on "Find your case" — the badge must reflect the just-saved
+      // Globex profile, not the stale Acme Corp one _viewerProfile was
+      // still holding onto.
+      expect(find.text('Your company'), findsNothing);
+    });
   });
 }

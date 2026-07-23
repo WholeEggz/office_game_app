@@ -32,7 +32,11 @@ Future<void> openProfile(
   final record = await computeTrackRecord(repo: repo, viewerId: viewerId);
   final profile = await auth.currentLocationProfile();
   if (!context.mounted) return;
-  Navigator.of(context).push(
+  // Awaited (not fire-and-forget): callers that want to know when the
+  // player is back — e.g. PlayerEntryScreen refreshing its own cached
+  // copy of the viewer's location once they might have edited it here —
+  // rely on this Future only resolving once ProfileScreen is popped.
+  await Navigator.of(context).push(
     MaterialPageRoute(
       builder: (_) => ProfileScreen(
         viewerId: viewerId,
