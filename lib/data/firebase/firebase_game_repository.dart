@@ -685,9 +685,10 @@ class FirebaseGameRepository implements GameRepository {
   @override
   Stream<List<Vote>> watchCurrentRoundVotes(String gameId) {
     final gameRef = _games.doc(gameId);
-    final controller = StreamController<List<Vote>>.broadcast();
+    late final StreamController<List<Vote>> controller;
     QuerySnapshot<Map<String, dynamic>>? votesSnap;
     int? currentRound;
+    List<StreamSubscription>? subs;
 
     void emit() {
       final snap = votesSnap;
@@ -697,22 +698,40 @@ class FirebaseGameRepository implements GameRepository {
       );
     }
 
-    final subs = <StreamSubscription>[
-      gameRef.snapshots().listen((snap) {
-        currentRound = (snap.data()?['currentRound'] as num?)?.toInt() ?? 1;
-        emit();
-      }, onError: controller.addError),
-      gameRef.collection('votes').snapshots().listen((snap) {
-        votesSnap = snap;
-        emit();
-      }, onError: controller.addError),
-    ];
-
-    controller.onCancel = () async {
-      for (final sub in subs) {
-        await sub.cancel();
-      }
-    };
+    // See watchGame's comment on why these listeners must not start until
+    // controller.stream has an actual subscriber — without this, a vote
+    // cast on a now-disposed GameScreen (re-entering the case creates a
+    // brand-new one) can have its first, already-correct snapshot dropped
+    // by this broadcast controller before _PlayerRosterSection's
+    // StreamBuilder finishes mounting, leaving the roster stuck showing
+    // "no vote" until something else happens to change server-side (the
+    // voting-history section never had this bug: it's a plain
+    // `.snapshots().map(...)`, lazily subscribed by Firestore's own SDK).
+    controller = StreamController<List<Vote>>.broadcast(
+      onListen: () {
+        subs = <StreamSubscription>[
+          gameRef.snapshots().listen((snap) {
+            currentRound = (snap.data()?['currentRound'] as num?)?.toInt() ?? 1;
+            emit();
+          }, onError: (Object e, StackTrace st) => controller.addError(e, st)),
+          gameRef.collection('votes').snapshots().listen((snap) {
+            votesSnap = snap;
+            emit();
+          }, onError: (Object e, StackTrace st) => controller.addError(e, st)),
+        ];
+      },
+      onCancel: () async {
+        final toCancel = subs;
+        subs = null;
+        votesSnap = null;
+        currentRound = null;
+        if (toCancel != null) {
+          for (final sub in toCancel) {
+            await sub.cancel();
+          }
+        }
+      },
+    );
     return controller.stream;
   }
 
