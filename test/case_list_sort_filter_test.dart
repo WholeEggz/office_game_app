@@ -90,4 +90,63 @@ void main() {
     expect(find.text('Open Case'), findsNothing);
     expect(find.text('No cases match these filters.'), findsOneWidget);
   });
+
+  testWidgets(
+      'the "New here?" hint is the first thing shown on the case list, and '
+      '"Got it" dismisses it for good', (tester) async {
+    final repo = LocalGameRepository();
+    await repo.createGame(
+      locationTag: 'Open Case',
+      minPlayers: 4,
+      creatorId: 'creator1',
+      creatorName: 'Creator 1',
+    );
+
+    await _signIn(tester, repo);
+
+    final welcomeY = tester.getTopLeft(find.textContaining('New here?')).dy;
+    final locationHintY =
+        tester.getTopLeft(find.textContaining('Cases near your office')).dy;
+    expect(welcomeY, lessThan(locationHintY));
+
+    // Dismissing it must not surface the "Couldn't dismiss" SnackBar —
+    // that was the reported bug, caused by this hint previously routing
+    // through the game-scoped GameRepository.dismissHint (which needs a
+    // gameId that doesn't exist on this pre-game screen) instead of
+    // AuthService.dismissHint.
+    await tester.tap(find.text('Got it').first);
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining("Couldn't dismiss"), findsNothing);
+    expect(find.textContaining('New here?'), findsNothing);
+
+    // Still gone after a rebuild (e.g. sorting/filtering), not just
+    // faded out for this frame.
+    await tester.tap(find.text('recruiting'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('New here?'), findsNothing);
+  });
+
+  testWidgets('"Open Help" on the "New here?" hint both dismisses it and opens Help',
+      (tester) async {
+    final repo = LocalGameRepository();
+    await repo.createGame(
+      locationTag: 'Open Case',
+      minPlayers: 4,
+      creatorId: 'creator1',
+      creatorName: 'Creator 1',
+    );
+
+    await _signIn(tester, repo);
+
+    await tester.tap(find.text('Open Help'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('How to play'), findsOneWidget);
+    expect(find.textContaining("Couldn't dismiss"), findsNothing);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.textContaining('New here?'), findsNothing);
+  });
 }

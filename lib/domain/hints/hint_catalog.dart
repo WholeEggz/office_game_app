@@ -11,12 +11,6 @@ String _formatTimeOfDay(Duration timeOfDay) {
   return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}';
 }
 
-String _welcomeHelpMessage(HintContext c) => 'New here? Check Help for how a round works.';
-bool _welcomeHelpRelevant(HintContext c) => true;
-// No natural completion signal of its own — purely "Got it"-driven (see
-// HintDefinition.dismissKey, keyed by id alone since this is onboarding).
-bool _welcomeHelpCompleted(HintContext c) => false;
-
 String _sayHelloMessage(HintContext c) =>
     "Say hello in the Observation Log so others know you're around.";
 bool _sayHelloRelevant(HintContext c) => !c.hasEverPosted;
@@ -85,17 +79,6 @@ String _recruitmentResponsePendingDiscriminator(HintContext c) =>
 /// `respondToRecruitment` themselves. In practice this window is short: it
 /// closes the moment the real target confirms, since that ends the round.
 const List<HintDefinition> hintCatalog = [
-  HintDefinition(
-    id: 'welcome_help',
-    scope: HintScope.onboarding,
-    audience: HintAudience.everyone,
-    priority: 100,
-    actionLabel: 'Open Help',
-    actionTarget: HintActionTarget.help,
-    message: _welcomeHelpMessage,
-    isRelevant: _welcomeHelpRelevant,
-    isCompleted: _welcomeHelpCompleted,
-  ),
   HintDefinition(
     id: 'say_hello',
     scope: HintScope.onboarding,

@@ -14,7 +14,9 @@ enum HintAudience { everyone, mafia }
 /// A second, optional screen a hint's "Got it" row can offer to jump to
 /// (e.g. `welcome_help` -> Help). Kept as a plain enum here (no
 /// `BuildContext`/`Navigator` in this domain layer) — the UI maps each
-/// value to an actual navigation in `tutorial_hint_banner.dart`.
+/// value to an actual navigation in `tutorial_hint_banner.dart` (in-game
+/// hints) or `static_hint_banner.dart` (pre-game hints, see
+/// `static_hint_catalog.dart`'s `StaticHintInfo`, which reuses this enum).
 enum HintActionTarget { help }
 
 /// One entry in the tutorial hint catalog (`hint_catalog.dart`). Pure data
@@ -48,8 +50,11 @@ class HintDefinition {
   final String Function(HintContext context)? dismissDiscriminator;
 
   /// A second action alongside "Got it", for a hint whose message points
-  /// at a specific other screen (only `welcome_help` -> Help today). Null
-  /// for every hint that's just describing something on the current screen.
+  /// at a specific other screen. Null for every hint that's just
+  /// describing something on the current screen. (`welcome_help`, the one
+  /// hint that used this, has since moved to `static_hint_catalog.dart` —
+  /// no entry in this in-game catalog uses it today, but the mechanism
+  /// stays for the next one that does.)
   final String? actionLabel;
   final HintActionTarget? actionTarget;
 

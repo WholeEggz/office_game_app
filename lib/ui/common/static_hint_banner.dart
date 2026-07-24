@@ -5,8 +5,17 @@ import 'package:provider/provider.dart';
 import '../../design/colors.dart';
 import '../../design/spacing.dart';
 import '../../design/typography.dart';
+import '../../domain/hints/hint_definition.dart' show HintActionTarget;
 import '../../domain/hints/static_hint_catalog.dart';
 import '../../domain/repositories/auth_service.dart';
+import '../help/help_screen.dart';
+
+void _performAction(BuildContext context, HintActionTarget target) {
+  switch (target) {
+    case HintActionTarget.help:
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => const HelpScreen()));
+  }
+}
 
 /// A dismissible informational tip for onboarding screens (registration,
 /// case list, case creation) that have no `Game`/`Player` state to hang a
@@ -86,6 +95,8 @@ class _StaticHintBannerState extends State<StaticHintBanner>
   @override
   Widget build(BuildContext context) {
     if (_dismissed ?? true) return const SizedBox.shrink();
+    final info = staticHintCatalog.firstWhere((h) => h.id == widget.id);
+    final actionTarget = info.actionTarget;
     return FadeTransition(
       opacity: _controller,
       child: Container(
@@ -106,7 +117,7 @@ class _StaticHintBannerState extends State<StaticHintBanner>
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
                   child: Text(
-                    staticHintCatalog.firstWhere((h) => h.id == widget.id).message,
+                    info.message,
                     style: AppTypography.body.copyWith(color: AppColors.sageText),
                   ),
                 ),
@@ -116,6 +127,14 @@ class _StaticHintBannerState extends State<StaticHintBanner>
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
+                if (actionTarget != null)
+                  TextButton(
+                    onPressed: () {
+                      _dismiss();
+                      _performAction(context, actionTarget);
+                    },
+                    child: Text(info.actionLabel!),
+                  ),
                 TextButton(onPressed: _dismiss, child: const Text('Got it')),
               ],
             ),

@@ -20,10 +20,11 @@ pre-game hints (registration, "Find your case", case creation — see
 covers the whole journey, not just what happened after joining this case.
 
 Every hint gets a "Got it" button (bottom-right of the banner) — tapping
-it dismisses that hint. `welcome_help` also gets a second button ("Open
-Help") alongside it, since its message points at a specific other screen;
-every other hint just has "Got it", since they're all about something on
-the current screen already.
+it dismisses that hint. A hint whose message points at a specific other
+screen (only `welcome_help`, a *static* pre-game hint — see "Static
+onboarding hints" below) gets a second button ("Open Help") alongside it;
+every hint in the in-game catalog below just has "Got it", since they're
+all about something on the current screen already.
 
 `onboarding` hints complete once and never resurface for that case (but
 are scoped per case, not per player for life — see "Known limitations"
@@ -60,7 +61,6 @@ Every hint's "Got it" writes to the same `GameRepository.dismissHint`/
 
 | id | scope | audience | priority | dismiss discriminator | message | relevant when | completed when |
 |---|---|---|---|---|---|---|---|
-| `welcome_help` | onboarding | everyone | 100 | — (permanent) | "New here? Check Help for how a round works." | always, until dismissed | never on its own — purely "Got it"-driven |
 | `elimination_ack_pending` | recurring | everyone | 95 | current signal's method text | "Check today's signal — confirm it before the window lapses." | the elimination signal has executed and isn't confirmed yet | the elimination signal is confirmed |
 | `recruitment_response_pending` | recurring | everyone | 95 | current signal's sign text | "Someone reached out — check the recruitment sign and respond." | the recruitment sign has executed and isn't confirmed yet | the recruitment sign is confirmed |
 | `say_hello` | onboarding | everyone | 90 | — (permanent) | "Say hello in the Observation Log so others know you're around." | player has never logged an observation | player has logged at least one observation (any round) |
@@ -84,6 +84,16 @@ onboarding hint's status only ever moves one way (Not started -> Pending
 Pending next round even after reading Completed this round — that's
 expected, not a bug, since the round itself is the same discriminator
 used to reset "Got it" dismissals (see "Dismissal" above).
+
+`HintProgressScreen` resolves `self` via `GameRepository.watchVisiblePlayers`
+(the same viewer-redacted roster `game_screen.dart` uses), *not*
+`Game.playerById` off `watchGame`'s own `Game.players` field — that field
+is only ever populated via the emulator-only `debugRoster` collection
+(see `firebase_game_repository.dart`), so it's always empty against a
+real Firebase backend. Reading `self` from there used to make this whole
+screen render as an empty `SizedBox.shrink()` for every real player,
+invisible when testing against `LocalGameRepository` (whose `Game.players`
+*is* the real roster) — hence "some users see an empty list."
 
 ## Known limitations
 
@@ -116,12 +126,17 @@ before a game exists or before the player has joined one. These use a
 separate, simpler mechanism: `StaticHintBanner`
 (`lib/ui/common/static_hint_banner.dart`) — same sage-green look and
 "Got it" + fade-out behavior as the in-game banner, but backed by a plain
-id+message pair (no relevant/completed predicates, no stagger sequencing
-— each screen only ever shows one) from `staticHintCatalog`
-(`lib/domain/hints/static_hint_catalog.dart`), *not* `hintCatalog`.
-`StaticHintBanner` takes just an `id` and looks its message up there — the
-one place that pairing is written down, so the banner and
-`HintProgressScreen`'s merged list can never disagree about the wording.
+`StaticHintInfo` (id + message, optionally `actionLabel`/`actionTarget` —
+same idea as `HintDefinition`'s, reusing the same `HintActionTarget` enum
+— for a hint whose message points at another screen) from
+`staticHintCatalog` (`lib/domain/hints/static_hint_catalog.dart`), *not*
+`hintCatalog`. No relevant/completed predicates or stagger sequencing —
+each is either dismissed or not; a screen with more than one just stacks
+them in catalog order (the case-list screen does this today: `welcome_help`
+above `case_list_location_sort`). `StaticHintBanner` takes just an `id`
+and looks its message/action up there — the one place that pairing is
+written down, so the banner and `HintProgressScreen`'s merged list can
+never disagree about the wording.
 
 Dismissal here goes through `AuthService.dismissHint`/
 `fetchDismissedHints` instead of `GameRepository` — a *player*-level
@@ -129,21 +144,33 @@ ledger (piggybacked on the same `users/{uid}` Firestore doc `displayName`
 already lives on), since these screens exist before any `gameId` does.
 Once dismissed, a given `id` never shows again for that identity (on any
 device, in any case), and reads as "Completed" in `HintProgressScreen`.
+This is also why `welcome_help` lives here rather than in `hintCatalog`:
+it used to be an in-game hint dismissed via the game-scoped
+`GameRepository.dismissHint`, which needs a real `gameId` — fine inside
+an actual case, but there wasn't one on the "Find your case" screen where
+this hint actually needs to show first, so dismissing it there always
+threw and surfaced the "Couldn't dismiss that — try again" SnackBar.
+Moving it to the player-level static mechanism fixed both problems at
+once.
 
-| id | screen | file | message |
-|---|---|---|---|
-| `registration_location` | Registration | `lib/ui/entry/player_entry_screen.dart` (`_buildRegisterForm`) | "The location you enter here becomes a case's location if you start one later, so keep it accurate." |
-| `case_list_location_sort` | Find your case | `lib/ui/entry/player_entry_screen.dart` (`_buildGameList`) | "Cases near your office float to the top of this list — join one below, or start your own if you don't see it yet." |
-| `case_creation_restricted_location` | Case creation | `lib/ui/entry/case_creation_screen.dart` | "Mark this case Restricted if you want to control who can join with a passphrase. Its location comes from your own profile — the one you set when you registered." |
+| id | screen | file | action | message |
+|---|---|---|---|---|
+| `welcome_help` | Find your case | `lib/ui/entry/player_entry_screen.dart` (`_buildGameList`) | "Open Help" -> Help screen | "New here? Open Help to see how a round works, and keep an eye out for hints like this one as you move through the app." |
+| `registration_location` | Registration | `lib/ui/entry/player_entry_screen.dart` (`_buildRegisterForm`) | — | "The location you enter here becomes a case's location if you start one later, so keep it accurate." |
+| `case_list_location_sort` | Find your case | `lib/ui/entry/player_entry_screen.dart` (`_buildGameList`) | — | "Cases near your office float to the top of this list — join one below, or start your own if you don't see it yet." |
+| `case_creation_restricted_location` | Case creation | `lib/ui/entry/case_creation_screen.dart` | — | "Mark this case Restricted if you want to control who can join with a passphrase. Its location comes from your own profile — the one you set when you registered." |
 
 To add another one of these: add a `StaticHintInfo(id: '...', message:
-'...')` entry to `staticHintCatalog`, then drop a
+'...')` entry to `staticHintCatalog` (plus `actionLabel`/`actionTarget` if
+it should point at another screen), then drop a
 `const StaticHintBanner(id: '...')` at the relevant spot in the screen's
 build method — pick a globally-unique `id` (it's a flat, player-wide
-namespace, not scoped per screen). It'll automatically show up in
-`HintProgressScreen` too, ahead of the in-game entries. No test in
-`hint_engine_test.dart` needed (there's no relevant/completed logic to
-verify).
+namespace, not scoped per screen), and place it before any other static
+banner on the same screen if it should show first. It'll automatically
+show up in `HintProgressScreen` too, ahead of the in-game entries. No test
+in `hint_engine_test.dart` needed (there's no relevant/completed logic to
+verify) — see `test/static_hint_catalog_test.dart` for the kind of thing
+worth covering instead (catalog shape, action wiring).
 
 `StaticHintBanner` needs an `AuthService` above it in the widget tree
 just to render (it checks dismissed state on `initState`, before the
@@ -169,8 +196,9 @@ different catalog, no predicates.)
 1. Add/edit the `HintDefinition` entry in `hint_catalog.dart` (message,
    `isRelevant`, `isCompleted`, `priority`, `audience`, `scope`,
    `dismissDiscriminator` for a `recurring` hint, `actionLabel`/
-   `actionTarget` if it should point at another screen like
-   `welcome_help` does).
+   `actionTarget` if it should point at another screen — no in-game hint
+   uses this today, but `StaticHintInfo`'s `welcome_help` entry above
+   shows the pattern).
 2. If it needs a new `actionTarget`, add the enum value to
    `HintActionTarget` (`hint_definition.dart`) and a matching case in
    `_performAction` (`tutorial_hint_banner.dart`) — that's the only place

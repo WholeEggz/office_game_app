@@ -2,7 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:office_game_app/data/local/local_game_repository.dart';
 import 'package:office_game_app/domain/hints/hint_catalog.dart';
 import 'package:office_game_app/domain/hints/hint_context.dart';
-import 'package:office_game_app/domain/hints/hint_definition.dart';
 import 'package:office_game_app/domain/hints/hint_engine.dart';
 import 'package:office_game_app/domain/models/game.dart';
 
@@ -74,23 +73,6 @@ void main() {
         HintStatus.active);
   });
 
-  test('welcome_help only completes once dismissHint is called for that viewer', () async {
-    var ctx = await contextFor('p1');
-    expect(evaluateHint(hintCatalog.firstWhere((h) => h.id == 'welcome_help'), ctx),
-        HintStatus.active);
-
-    await repo.dismissHint(gameId: game.id, viewerId: 'p1', hintId: 'welcome_help');
-
-    ctx = await contextFor('p1');
-    expect(evaluateHint(hintCatalog.firstWhere((h) => h.id == 'welcome_help'), ctx),
-        HintStatus.completed);
-
-    // A different viewer's own dismissal is untouched.
-    final otherCtx = await contextFor('p2');
-    expect(evaluateHint(hintCatalog.firstWhere((h) => h.id == 'welcome_help'), otherCtx),
-        HintStatus.active);
-  });
-
   test('mafia_thread_intro never applies to a villager', () async {
     final freshGame = await repo.watchGame(game.id).first;
     final ctx = await contextFor(freshGame.villagers.first.id);
@@ -103,33 +85,30 @@ void main() {
   test('topBannerHint picks the highest-priority active hint', () async {
     final ctx = await contextFor('p1');
     final top = topBannerHint(hintCatalog, ctx);
-    // Nothing done yet: welcome_help (100) outranks say_hello (90) and
-    // cast_first_vote (80), which are all active simultaneously.
-    expect(top?.id, 'welcome_help');
+    // Nothing done yet: say_hello (90) outranks cast_first_vote (80) —
+    // both are active simultaneously. (`welcome_help`, formerly the
+    // highest-priority entry here, now lives in `staticHintCatalog`
+    // instead — it's pre-game, not part of this in-game catalog.)
+    expect(top?.id, 'say_hello');
   });
 
-  test('dismissing welcome_help then completing say_hello does not resurrect welcome_help',
-      () async {
-    // Reproduces the exact reported sequence: dismiss the "New here?" hint,
-    // then say hello in the observation log, then check both the banner
-    // pick and welcome_help's own status again. Uses a guaranteed villager
-    // (roles are drawn randomly at game start) so mafia_thread_intro never
+  test('completing say_hello moves the banner on to the next active hint', () async {
+    // Reproduces the reported sequence (minus welcome_help, which no
+    // longer lives in this catalog): say hello, then check the banner
+    // picks up the next hint in line. Uses a guaranteed villager (roles
+    // are drawn randomly at game start) so mafia_thread_intro never
     // outranks cast_first_vote here regardless of the random draw.
     final freshGame = await repo.watchGame(game.id).first;
     final playerId = freshGame.villagers.first.id;
 
-    await repo.dismissHint(gameId: game.id, viewerId: playerId, hintId: 'welcome_help');
     var ctx = await contextFor(playerId);
-    expect(evaluateHint(hintCatalog.firstWhere((h) => h.id == 'welcome_help'), ctx),
-        HintStatus.completed);
     expect(topBannerHint(hintCatalog, ctx)?.id, 'say_hello');
 
     await repo.logObservation(gameId: game.id, authorId: playerId, text: 'Hello everyone');
 
     ctx = await contextFor(playerId);
-    expect(evaluateHint(hintCatalog.firstWhere((h) => h.id == 'welcome_help'), ctx),
-        HintStatus.completed,
-        reason: 'welcome_help must stay dismissed regardless of other hints completing');
+    expect(evaluateHint(hintCatalog.firstWhere((h) => h.id == 'say_hello'), ctx),
+        HintStatus.completed);
     expect(topBannerHint(hintCatalog, ctx)?.id, 'cast_first_vote');
   });
 
@@ -153,12 +132,6 @@ void main() {
     ctx = await contextFor('p1');
     expect(evaluateHint(hint, ctx), HintStatus.active,
         reason: 'a new round re-arms the reminder even though it was dismissed before');
-  });
-
-  test('welcome_help points at the Help screen as its secondary action', () {
-    final hint = hintCatalog.firstWhere((h) => h.id == 'welcome_help');
-    expect(hint.actionTarget, HintActionTarget.help);
-    expect(hint.actionLabel, isNotNull);
   });
 
   test('notice_something resets every round while say_hello does not', () async {

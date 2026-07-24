@@ -515,6 +515,8 @@ class _PlayerEntryScreenState extends State<PlayerEntryScreen> {
             const SizedBox(height: AppSpacing.xs),
             Text('Signed in as ${user.displayName}.', style: AppTypography.bodySmall),
             const SizedBox(height: AppSpacing.lg),
+            const StaticHintBanner(id: 'welcome_help'),
+            const SizedBox(height: AppSpacing.sm),
             const StaticHintBanner(id: 'case_list_location_sort'),
             const SizedBox(height: AppSpacing.lg),
             if (games.isNotEmpty) ...[
