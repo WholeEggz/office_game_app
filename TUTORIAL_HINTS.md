@@ -95,6 +95,24 @@ screen render as an empty `SizedBox.shrink()` for every real player,
 invisible when testing against `LocalGameRepository` (whose `Game.players`
 *is* the real roster) — hence "some users see an empty list."
 
+## Debug: resetting hint statuses for testing
+
+`HintProgressScreen` shows a "Reset all hint statuses (debug)" button
+above the list, gated by `kDebugMode` (same convention as `game_screen
+.dart`'s "Reveal roles (debug)"/"Resolve today's votes (debug)" — never
+shown in a release build). It clears both dismissal ledgers at once:
+`GameRepository.clearDismissedHints` (this game's "Got it" ledger) and
+`AuthService.clearDismissedHints` (the pre-game, player-level one), then
+re-fetches the static half so the list reflects it immediately — the
+in-game half refreshes on its own since it's already backed by a live
+stream.
+
+This only undoes "Got it" dismissals — it can't and doesn't touch hints
+whose completion is derived from real game state (having actually voted,
+posted an observation, etc.). To fully replay those too, start a fresh
+case or a fresh identity instead; there's no safe way to rewind real game
+history from a debug button.
+
 ## Known limitations
 
 - **`elimination_ack_pending`/`recruitment_response_pending` can't tell

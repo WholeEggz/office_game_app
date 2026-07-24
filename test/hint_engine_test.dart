@@ -134,6 +134,30 @@ void main() {
         reason: 'a new round re-arms the reminder even though it was dismissed before');
   });
 
+  test('clearDismissedHints (debug reset) reactivates a dismissed hint without '
+      'touching real completions', () async {
+    // say_hello dismissed via "Got it" without ever actually posting.
+    await repo.dismissHint(gameId: game.id, viewerId: 'p1', hintId: 'say_hello');
+    // cast_first_vote completed for real, by actually voting.
+    await repo.castVote(gameId: game.id, voterId: 'p1', targetPlayerId: 'p2');
+
+    var ctx = await contextFor('p1');
+    expect(evaluateHint(hintCatalog.firstWhere((h) => h.id == 'say_hello'), ctx),
+        HintStatus.completed);
+    expect(evaluateHint(hintCatalog.firstWhere((h) => h.id == 'cast_first_vote'), ctx),
+        HintStatus.completed);
+
+    await repo.clearDismissedHints(gameId: game.id, viewerId: 'p1');
+
+    ctx = await contextFor('p1');
+    expect(evaluateHint(hintCatalog.firstWhere((h) => h.id == 'say_hello'), ctx),
+        HintStatus.active,
+        reason: 'the "Got it" dismissal was cleared');
+    expect(evaluateHint(hintCatalog.firstWhere((h) => h.id == 'cast_first_vote'), ctx),
+        HintStatus.completed,
+        reason: 'a real completion (actually voting) is not undone by a dismissal reset');
+  });
+
   test('notice_something resets every round while say_hello does not', () async {
     await repo.logObservation(gameId: game.id, authorId: 'p1', text: 'first note');
     var ctx = await contextFor('p1');

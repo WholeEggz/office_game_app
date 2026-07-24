@@ -254,4 +254,14 @@ class FirebaseAuthService implements AuthService {
       SetOptions(merge: true),
     );
   }
+
+  @override
+  Future<void> clearDismissedHints() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    await _db.collection('users').doc(user.uid).set(
+      {'dismissedHints': <String>[]},
+      SetOptions(merge: true),
+    );
+  }
 }

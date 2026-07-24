@@ -174,4 +174,11 @@ class LocalAuthService implements AuthService {
     if (user == null) return;
     _dismissedHints.putIfAbsent(user.id, () => {}).add(hintId);
   }
+
+  @override
+  Future<void> clearDismissedHints() async {
+    final user = _current;
+    if (user == null) return;
+    _dismissedHints[user.id]?.clear();
+  }
 }

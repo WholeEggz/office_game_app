@@ -165,4 +165,48 @@ void main() {
       expect(await auth.suggestCountries('port'), ['Portugal']);
     });
   });
+
+  group('LocalAuthService pre-game hint dismissal', () {
+    test('fetchDismissedHints is empty before any dismissal', () async {
+      final auth = LocalAuthService();
+      await auth.signInWithDisplayName('Alice', country: '', city: '', companyOrOffice: '');
+
+      expect(await auth.fetchDismissedHints(), isEmpty);
+    });
+
+    test('dismissHint marks that id as dismissed for the current identity only', () async {
+      final auth = LocalAuthService();
+      final alice = await auth.signInWithDisplayName(
+        'Alice',
+        country: '',
+        city: '',
+        companyOrOffice: '',
+      );
+      await auth.signInWithDisplayName('Bob', country: '', city: '', companyOrOffice: '');
+
+      await auth.dismissHint('welcome_help');
+
+      expect(await auth.fetchDismissedHints(), {'welcome_help'});
+
+      // A different identity's dismissals are entirely separate — this is
+      // the mechanism `welcome_help` now relies on instead of the
+      // game-scoped `GameRepository.dismissHint`, which needed a `gameId`
+      // that doesn't exist on a pre-game screen.
+      await auth.switchToUser(alice.id);
+      expect(await auth.fetchDismissedHints(), isEmpty);
+    });
+
+    test('clearDismissedHints (debug reset) un-dismisses everything for the current identity',
+        () async {
+      final auth = LocalAuthService();
+      await auth.signInWithDisplayName('Alice', country: '', city: '', companyOrOffice: '');
+      await auth.dismissHint('welcome_help');
+      await auth.dismissHint('case_list_location_sort');
+      expect(await auth.fetchDismissedHints(), {'welcome_help', 'case_list_location_sort'});
+
+      await auth.clearDismissedHints();
+
+      expect(await auth.fetchDismissedHints(), isEmpty);
+    });
+  });
 }

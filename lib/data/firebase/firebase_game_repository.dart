@@ -964,4 +964,12 @@ class FirebaseGameRepository implements GameRepository {
       return ids.cast<String>().toSet();
     });
   }
+
+  @override
+  Future<void> clearDismissedHints({required String gameId, required String viewerId}) async {
+    await _dismissedHintsRef(gameId, viewerId).set(
+      {'hintIds': <String>[]},
+      SetOptions(merge: true),
+    );
+  }
 }

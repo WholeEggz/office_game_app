@@ -112,4 +112,9 @@ abstract class AuthService {
   /// Records that the current identity dismissed pre-game hint [hintId] —
   /// see [fetchDismissedHints]. A no-op when there's no current user.
   Future<void> dismissHint(String hintId);
+
+  /// Debug/testing convenience: clears every pre-game hint the current
+  /// identity has dismissed — see [fetchDismissedHints]. A no-op when
+  /// there's no current user.
+  Future<void> clearDismissedHints();
 }

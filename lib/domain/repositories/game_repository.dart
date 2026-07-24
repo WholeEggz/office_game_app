@@ -418,6 +418,13 @@ abstract class GameRepository {
     required String hintId,
   });
 
+  /// Debug/testing convenience: clears every hint [viewerId] has dismissed
+  /// for this game, so anything only hidden via "Got it" becomes active
+  /// again. Doesn't touch hints whose completion is derived from real game
+  /// state (e.g. having actually voted) — only the dismissal ledger itself,
+  /// since there's no safe way to "undo" real game history from here.
+  Future<void> clearDismissedHints({required String gameId, required String viewerId});
+
   /// [viewerId]'s dismissed tutorial-hint ids for this game — see
   /// [dismissHint].
   Stream<Set<String>> watchDismissedHintIds({

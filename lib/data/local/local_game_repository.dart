@@ -1342,4 +1342,11 @@ class LocalGameRepository implements GameRepository {
     yield current();
     yield* record.dismissedHintChanges.stream.map((_) => current());
   }
+
+  @override
+  Future<void> clearDismissedHints({required String gameId, required String viewerId}) async {
+    final record = _record(gameId);
+    record.dismissedHintsByViewer[viewerId]?.clear();
+    record.dismissedHintChanges.add(null);
+  }
 }
