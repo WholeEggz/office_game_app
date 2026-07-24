@@ -124,8 +124,8 @@ final List<_Section> _sections = [
   _Section('Your two possible roles', [
     _Para(
       '**Witness** — the default, public role. You have nothing to hide. '
-      'You vote, log observations, and watch for the day\'s signal like '
-      'everyone else.',
+      'You vote, log observations, and watch for the day\'s elimination '
+      'signal like everyone else.',
     ),
     _Para(
       '**Informant** — the hidden, Mafia role. You coordinate secretly with '
@@ -194,17 +194,17 @@ final List<_Section> _sections = [
       'Any Informant **proposes an elimination method** against a target '
           '(e.g. "a note left on their monitor") — the method, not the '
           'target, is immediately shown to every Witness as a forewarning '
-          '("The Wire has agreed on a signal... watch for it").',
+          '("The Wire has agreed on an elimination signal... watch for it").',
       'Every other currently-active Informant has to **accept** before it '
           'counts as agreed. An absent member (toggled "inactive") isn\'t '
           'required to accept, and doesn\'t block the others.',
       'Once agreed, an Informant has a 1-hour window to mark it '
           '**Executed** — after that, or once the round ends first, the '
           'opportunity lapses and they have to start over.',
-      'Once executed, the signal becomes visible to every Witness to check '
-          'for on their own. The real target sees it and can confirm they '
-          'found it — that confirmation ends the round early, right then, '
-          'without waiting for the daily cutoff.',
+      'Once executed, the elimination signal becomes visible to every '
+          'Witness to check for on their own. The real target sees it and '
+          'can confirm they found it — that confirmation ends the round '
+          'early, right then, without waiting for the daily cutoff.',
     ]),
   ]),
   _Section('Recruiting a Witness', [

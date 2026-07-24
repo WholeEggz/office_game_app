@@ -61,16 +61,54 @@ Every hint's "Got it" writes to the same `GameRepository.dismissHint`/
 
 | id | scope | audience | priority | dismiss discriminator | message | relevant when | completed when |
 |---|---|---|---|---|---|---|---|
-| `elimination_ack_pending` | recurring | everyone | 95 | current signal's method text | "Check today's signal — confirm it before the window lapses." | the elimination signal has executed and isn't confirmed yet | the elimination signal is confirmed |
+| `elimination_ack_pending` | recurring | everyone | 95 | current elimination signal's method text | "Check today's elimination signal — confirm it before the window lapses." | the elimination signal has executed and isn't confirmed yet | the elimination signal is confirmed |
 | `recruitment_response_pending` | recurring | everyone | 95 | current signal's sign text | "Someone reached out — check the recruitment sign and respond." | the recruitment sign has executed and isn't confirmed yet | the recruitment sign is confirmed |
+| `accept_elimination_method` | recurring | current Mafia only | 92 | the live proposal's own id | "Someone proposed an elimination method on the Wire — accept it to move it forward." | there's a live (unlapsed) elimination proposal this round self hasn't accepted (never relevant for the proposer, who's auto-accepted) | self has accepted the live proposal — never true before one exists at all (see "Elimination method lifecycle hints" below for why this isn't just `!isRelevant`) |
 | `say_hello` | onboarding | everyone | 90 | — (permanent) | "Say hello in the Observation Log so others know you're around." | player has never logged an observation | player has logged at least one observation (any round) |
-| `mafia_thread_intro` | onboarding | current Mafia only | 85 | — (permanent) | "Coordinate privately with your team in the Mafia Thread." | player is current Mafia and has never posted to the Mafia Thread | player has posted to the Mafia Thread at least once |
+| `mafia_thread_intro` | onboarding | current Mafia only | 85 | — (permanent) | "Coordinate privately with your team on the Wire." | player is current Mafia and has never posted to the Wire | player has posted to the Wire at least once |
+| `propose_elimination_method` | recurring | current Mafia only | 82 | current round number | "Propose an elimination method on the Wire for today." | no live (unlapsed) elimination proposal exists yet this round | a live elimination proposal exists this round (proposed, whether or not agreed yet) |
 | `cast_first_vote` | onboarding | everyone | 80 | — (permanent) | "When you're ready, cast a vote for who you suspect." | player has never cast a vote | player has cast at least one vote (any round) |
-| `vote_before_cutoff` | recurring | everyone | 60 | current round number | "Cast your vote for today before {dailyCutoffTime}." | player hasn't voted this round | player has voted this round |
+| `vote_before_cutoff` | recurring | everyone | 60 | current round number | "Cast your vote for today before {dailyCutoffTime}." | player hasn't voted this round *and* it's within 1 hour of `dailyCutoffTime` | player has voted this round |
+| `elimination_method_agreed` | recurring | everyone | 55 | current elimination method's text | "The Wire has agreed on today's elimination signal — it's visible to everyone now, but nothing has happened yet." | the elimination method is agreed (visible) but not yet executed | the elimination signal has executed (see "Elimination method lifecycle hints" — not just `!isRelevant`) |
 | `notice_something` | recurring | everyone | 50 | current round number | "Did you notice something? Log it in the Observation Log." | player hasn't logged an observation this round | player has logged an observation this round |
 
 (Table above is sorted by `priority`, highest first — the same order the
 banner picks between simultaneously-active hints.)
+
+## Elimination method lifecycle hints
+
+`propose_elimination_method` -> `accept_elimination_method` ->
+`elimination_method_agreed` -> `elimination_ack_pending` walk the same
+propose -> agree -> execute -> confirm shape `MafiaThreadEntry`'s doc
+comment describes, one hint per stage a mafia member (or, for the last
+two stages, everyone) might be waiting on. Recruitment mirrors this
+lifecycle exactly underneath, but only gets a tutorial hint for its final
+stage (`recruitment_response_pending`) — by the time recruitment unlocks,
+a mafia player has already been through this whole shape once already for
+elimination.
+
+Two of these (`accept_elimination_method`, `elimination_method_agreed`)
+deliberately do *not* define `isCompleted` as `!isRelevant`, unlike most
+hints in this catalog. Both have a real third state — "nothing has
+happened yet, there's nothing to do or confirm" — that isn't the same as
+"done": for `accept_elimination_method`, that's "no proposal exists at
+all" (should read Not started, not Completed); for
+`elimination_method_agreed`, that's "not agreed yet" (same). A naive
+negation would misread that state as Completed the instant nothing was
+relevant, rather than showing Not started until the thing being confirmed
+actually happens. See `_hasUnacceptedEliminationProposal`/
+`_eliminationMethodAgreedCompleted`'s doc comments in `hint_catalog.dart`.
+
+`vote_before_cutoff` also picked up a second condition on top of "haven't
+voted this round": it's only relevant within the last hour before
+`dailyCutoffTime` (`_isWithinWindowBeforeCutoff`, reading real wall-clock
+time the same way `LocalGameRepository._scheduleDailyCutoff` already
+does). Earlier in the round, either `cast_first_vote` (a first-timer) or
+just not being nagged yet is the right state — this is a last-call
+reminder, not a standing one. Being time-windowed also means it never
+crowds out something else that's relevant for most of the day: it simply
+isn't competing for the banner slot outside its window, rather than
+sitting there at a fixed priority the whole time.
 
 ## The progress list vs. the banner
 

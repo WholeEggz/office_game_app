@@ -537,7 +537,9 @@ class _EliminationBannerState extends State<_EliminationBanner>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            widget.executed ? "TODAY'S SIGNAL" : 'THE WIRE HAS AGREED ON A SIGNAL',
+            widget.executed
+                ? "TODAY'S ELIMINATION SIGNAL"
+                : 'THE WIRE HAS AGREED ON AN ELIMINATION SIGNAL',
             style: AppTypography.dataSmall.copyWith(color: AppColors.crimsonText),
           ),
           const SizedBox(height: AppSpacing.xs),
@@ -608,7 +610,10 @@ class _EliminationBannerState extends State<_EliminationBanner>
           if (!_tapped)
             Positioned.fill(
               child: Center(
-                child: Text("Tap to check today's signal", style: AppTypography.bodySmall),
+                child: Text(
+                  "Tap to check today's elimination signal",
+                  style: AppTypography.bodySmall,
+                ),
               ),
             ),
         ],

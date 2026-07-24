@@ -36,6 +36,12 @@ IconData _iconFor(String hintId) {
       return PhosphorIconsLight.clockCountdown;
     case 'mafia_thread_intro':
       return PhosphorIconsLight.chatsCircle;
+    case 'propose_elimination_method':
+      return PhosphorIconsLight.paperPlaneTilt;
+    case 'accept_elimination_method':
+      return PhosphorIconsLight.handshake;
+    case 'elimination_method_agreed':
+      return PhosphorIconsLight.checkCircle;
     case 'elimination_ack_pending':
       return PhosphorIconsLight.warning;
     case 'recruitment_response_pending':
